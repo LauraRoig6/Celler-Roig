@@ -42,6 +42,7 @@ export type Wine = {
   openSoon: boolean;
   drinkFrom?: number;
   drinkTo?: number;
+  drinkWindowSource: string;
   giftedBy: string;
   giftDate: string;
   tastings: Tasting[];

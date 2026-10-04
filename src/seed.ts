@@ -4,7 +4,7 @@ function makeWine(w: Partial<Wine> & Pick<Wine,'id'|'name'|'winery'|'type'|'quan
   return {
     vintage: undefined, grapes: [], aging: 'Sin indicar', customAging: '', protection: 'Sin indicación', classification: '',
     denomination: '', region: '', country: '', alcohol: undefined, price: undefined, shop: '', tried: false, wishlist: false,
-    favorite: false, openSoon: false, score: undefined, notes: '', rebuy: '', imageUrl: '', location: '', gifted: false, giftedBy: '', giftDate: '',
+    favorite: false, openSoon: false, drinkFrom: undefined, drinkTo: undefined, drinkWindowSource: '', score: undefined, notes: '', rebuy: '', imageUrl: '', location: '', gifted: false, giftedBy: '', giftDate: '',
     tastings: [], lastTastedAt: undefined,
     ...w,
   };

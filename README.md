@@ -1,34 +1,28 @@
-# Celler Roig · V8
+# Celler Roig · V9
 
-Aplicación móvil/PWA para la vinoteca personal de Pedro Roig.
+App móvil/PWA para la vinoteca de Pedro.
 
-## Novedades V8
+## Novedades V9
 
-- **Corrección importante del tipo de vino**: Celler Roig ya no deduce Rosado/Tinto/Blanco a partir de cualquier mención encontrada en Internet. Solo lo autorellena cuando la coincidencia es suficientemente clara. Si no está seguro, deja **Sin indicar / revisar**.
-- Al elegir una foto cuyo título indica claramente el tipo, esa evidencia sí se usa.
-- Búsqueda local tolerante a pequeñas erratas (por ejemplo, `criensa`, `bordaux`, etc.).
-- Instalación guiada como app/PWA desde el móvil.
-- Mejor funcionamiento sin cobertura: los cambios se conservan localmente y se reintentan con Neon al recuperar conexión.
-- Campo opcional **Mejor momento para beber: desde / hasta** y bloque de **Para abrir pronto** en Inicio.
-- **Parecidos en tu colección** dentro de la ficha, usando denominación, uvas, tipo, país y envejecimiento.
-- Estadísticas sencillas en Ajustes: nota media, países, denominación y uva más repetidas.
-- Exportación CSV y **copia completa JSON** con posibilidad de restaurarla.
-- Las imágenes elegidas de Internet se intentan descargar, comprimir y guardar como datos de la propia ficha; cuando el servidor de origen lo permite, dejan de depender de la URL externa.
-- Se mantiene el flujo móvil: **Vinoteca / Probados / Por probar**, regalos recibidos, foto, estanterías automáticas, historial de catas, ubicación, favoritos y “¿Qué abrimos hoy?”.
-
-No se ha añadido PIN, historial de compras, vinos regalados a otras personas ni “con quién lo probé”, para mantener la app sencilla.
+- Rediseño compacto de la ficha de alta/edición: menos cajas grandes y controles más cómodos en móvil.
+- `Ya lo he probado` y `Me lo regalaron` son ahora interruptores compactos y legibles.
+- El contador de botellas ocupa menos espacio.
+- La información del regalo se despliega solo cuando se activa.
+- `Mejor momento para beber` se intenta obtener automáticamente al buscar el vino.
+- El buscador realiza una búsqueda adicional orientada a *drinking window / ventana de consumo / potencial de guarda*.
+- Solo se rellena la ventana de consumo cuando aparece una referencia razonablemente clara; si no, se deja vacía.
+- La ficha marca el rango como `Autorrellenado` cuando procede de Internet. Si el usuario lo modifica manualmente, desaparece esa marca.
+- Se ha endurecido de nuevo la detección del tipo de vino: elegir una foto ya no puede cambiar por sí sola un tinto a rosado/blanco por el texto de una imagen.
+- La visualización de la ventana usa `Ahora–2030` cuando el periodo ya ha comenzado.
+- Caché PWA actualizada a V9.
 
 ## Variables de entorno en Vercel
 
-- `DATABASE_URL`: conexión de Neon PostgreSQL.
-- `SERPER_API_KEY`: búsqueda visual y de datos del vino.
+- `SERPER_API_KEY`: búsqueda de botellas y datos en Internet.
+- `DATABASE_URL`: conexión a Neon para guardar la colección en la nube.
+
+No es necesario cambiar estas variables al actualizar desde V8.
 
 ## Despliegue
 
-- Framework: **Vite**
-- Build command: `npm run build`
-- Output directory: `dist`
-
-## Añadir por foto
-
-La app intenta preparar la foto, limpiar fondos claros y leer pistas de la etiqueta cuando el navegador lo permite. Después muestra coincidencias visuales para elegir la botella correcta y rellenar los datos. Para fondos complejos, el recorte automático sigue siendo aproximado; no se ha añadido un servicio de visión de pago.
+Sube el contenido de esta carpeta a la raíz del repositorio conectado a Vercel. Vercel detectará el cambio y desplegará la nueva versión automáticamente.
