@@ -114,3 +114,7 @@ body{overscroll-behavior-y:none}
    este blend evita el típico rectángulo blanco sobre la estantería. */
 .shelf-grid .bottle-image img{mix-blend-mode:multiply}
 .catalog-image-choice span{font-weight:650}.catalog-image-choice span:has(+ small){color:#8b7379}
+/* V12: las fotos de catálogo suelen venir sobre blanco. En vez de prometer un recorte
+   perfecto, multiply hace que ese blanco adopte el fondo de Celler Roig y evita el
+   rectángulo blanco alrededor de la botella. Los PNG transparentes siguen viéndose bien. */
+.bottle-image img,.catalog-image-choice img,.bottle-choice img{mix-blend-mode:multiply}

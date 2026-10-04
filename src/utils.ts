@@ -64,8 +64,8 @@ async function canvasToBlob(canvas: HTMLCanvasElement, type = 'image/jpeg', qual
 export async function preparePhotoForLens(file: File): Promise<string> {
   const src = await fileToDataUrl(file);
   const img = await loadImage(src);
-  let maxDimension = 1280;
-  let quality = .86;
+  let maxDimension = 1600;
+  let quality = .90;
   let blob: Blob | null = null;
   for (let attempt = 0; attempt < 6; attempt++) {
     const scale = Math.min(1, maxDimension / Math.max(img.naturalWidth, img.naturalHeight));
@@ -77,9 +77,9 @@ export async function preparePhotoForLens(file: File): Promise<string> {
     if (!ctx) throw new Error('No se pudo preparar la foto');
     ctx.drawImage(img, 0, 0, w, h);
     blob = await canvasToBlob(canvas, 'image/jpeg', quality);
-    if (blob.size <= 450_000) break;
-    maxDimension = Math.max(720, Math.round(maxDimension * .82));
-    quality = Math.max(.62, quality - .07);
+    if (blob.size <= 485_000) break;
+    maxDimension = Math.max(820, Math.round(maxDimension * .86));
+    quality = Math.max(.68, quality - .06);
   }
   if (!blob) throw new Error('No se pudo preparar la foto');
   return fileToDataUrl(blob);
