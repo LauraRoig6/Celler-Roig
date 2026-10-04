@@ -107,3 +107,10 @@ body{overscroll-behavior-y:none}
 .rating-row{align-items:end}.rebuy-choices{height:48px}.rebuy-choices .choice{min-height:48px;padding:0 4px;font-size:11px}
 
 @media(max-width:390px){.toggle-row{grid-template-columns:36px minmax(0,1fr) 42px;padding:8px 9px}.toggle-row .toggle-icon{width:34px;height:34px}.drink-window-head{grid-template-columns:34px minmax(0,1fr)}.drink-window-head em{grid-column:2;justify-self:start;margin-top:-3px}.rating-row{grid-template-columns:1fr}.compact-subpanel .two-cols{grid-template-columns:1fr 1fr}}
+
+/* V11 · reconocimiento visual y fuentes de vino especializadas */
+.gallery-button{cursor:pointer}.gallery-button input{display:none}
+/* Las fotos de catálogo suelen venir sobre blanco. Además del recorte de borde,
+   este blend evita el típico rectángulo blanco sobre la estantería. */
+.shelf-grid .bottle-image img{mix-blend-mode:multiply}
+.catalog-image-choice span{font-weight:650}.catalog-image-choice span:has(+ small){color:#8b7379}
