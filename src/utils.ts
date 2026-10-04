@@ -147,3 +147,32 @@ export async function detectPhotoClues(file: File): Promise<string> {
 export function bottleSearchUrl(name: string, winery: string) {
   return `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(`${name} ${winery} botella png fondo transparente`)}`;
 }
+
+function normalizeSearch(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function editDistance(a: string, b: string) {
+  const m=a.length,n=b.length; const row=Array.from({length:n+1},(_,i)=>i);
+  for(let i=1;i<=m;i++){
+    let prev=row[0]; row[0]=i;
+    for(let j=1;j<=n;j++){
+      const temp=row[j];
+      row[j]=Math.min(row[j]+1,row[j-1]+1,prev+(a[i-1]===b[j-1]?0:1));
+      prev=temp;
+    }
+  }
+  return row[n];
+}
+
+export function wineMatchesQuery(wine: Wine, query: string) {
+  const q=normalizeSearch(query); if(!q) return true;
+  const hay=normalizeSearch([wine.name,wine.winery,wine.type,displayAging(wine),wine.classification,wine.denomination,wine.region,wine.country,wine.location,...wine.grapes,String(wine.vintage||'')].join(' '));
+  if(hay.includes(q)) return true;
+  const hayTokens=hay.split(' ').filter(Boolean), qTokens=q.split(' ').filter(Boolean);
+  return qTokens.every(token => hayTokens.some(h => {
+    if(h.startsWith(token) || token.startsWith(h)) return true;
+    const max = token.length >= 7 ? 2 : token.length >= 4 ? 1 : 0;
+    return max > 0 && editDistance(h,token) <= max;
+  }));
+}
