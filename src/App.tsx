@@ -473,7 +473,27 @@ function inferAgingText(text=''):Aging|undefined{const value=text.toLowerCase();
 
 function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{form:EditableWine;setForm:React.Dispatch<React.SetStateAction<EditableWine>>;save:()=>void;editing:boolean;moreInfo:boolean;setMoreInfo:(v:boolean)=>void;onCancel:()=>void;}) {
   const [catalogOpen,setCatalogOpen]=useState(false); const [catalogInitial,setCatalogInitial]=useState(''); const [photoMessage,setPhotoMessage]=useState(''); const [photoBusy,setPhotoBusy]=useState(false); const [dictating,setDictating]=useState(false);
-  async function pickImage(file?:File){if(!file)return;setPhotoBusy(true);setPhotoMessage('Preparando la foto…');try{const [data,clue]=await Promise.all([prepareBottleImageFromFile(file),detectPhotoClues(file)]);setForm(f=>({...f,imageUrl:data}));if(clue){setPhotoMessage('He leído parte de la etiqueta. Buscando coincidencias…');setCatalogInitial(clue);setCatalogOpen(true);}else setPhotoMessage('Foto guardada. He intentado limpiar el fondo automáticamente.');}catch{setPhotoMessage('Foto guardada.');}finally{setPhotoBusy(false);}}
+  async function pickImage(file?:File){
+    if(!file)return;
+    setPhotoBusy(true);
+    setPhotoMessage('Leyendo la etiqueta…');
+    let clue='';
+    try{
+      clue=await detectPhotoClues(file,(message)=>setPhotoMessage(message));
+      const data=await prepareBottleImageFromFile(file,(message)=>setPhotoMessage(message));
+      setForm(f=>({...f,imageUrl:data}));
+      if(clue){
+        setPhotoMessage(`Etiqueta detectada: ${clue}. Elige la botella correcta.`);
+        setCatalogInitial(clue);
+        setCatalogOpen(true);
+      }else{
+        setPhotoMessage('Botella preparada con fondo transparente. No he podido leer bien la etiqueta; puedes buscarla por nombre.');
+      }
+    }catch{
+      setPhotoMessage(clue?'He leído la etiqueta, pero no he podido preparar la foto.':'No he podido procesar esta foto. Prueba con la botella de frente y buena luz.');
+      if(clue){setCatalogInitial(clue);setCatalogOpen(true);}
+    }finally{setPhotoBusy(false);}
+  }
   function openCatalog(){setCatalogInitial([form.name,form.winery,form.vintage].filter(Boolean).join(' '));setCatalogOpen(true);}
   function useImportedWine(product:ImportedWineData){
     const raw=`${product.name||''} ${product.categories||''}`;
@@ -494,7 +514,7 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
   }
   function dictate(){const w=window as any;const Speech=w.SpeechRecognition||w.webkitSpeechRecognition;if(!Speech){alert('El dictado no está disponible en este navegador. Puedes usar el micrófono del teclado del móvil.');return;}const r=new Speech();r.lang='es-ES';r.interimResults=false;r.maxAlternatives=1;setDictating(true);r.onresult=(e:any)=>{const text=e.results?.[0]?.[0]?.transcript||'';setForm(f=>({...f,notes:[f.notes,text].filter(Boolean).join(f.notes?' ':'')}));};r.onerror=()=>setDictating(false);r.onend=()=>setDictating(false);r.start();}
   return <div className="page add-page"><div className="add-top"><button className="icon-button" onClick={onCancel}><X/></button><div><div className="eyebrow">{editing?'EDITAR':'NUEVO VINO'}</div><h1>{editing?'Editar vino':'Añadir vino'}</h1></div><button className="save-top" onClick={save}>Guardar</button></div>
-    <div className="image-picker"><BottleVisual wine={{...form,id:'preview',createdAt:'',manualOrder:0}}/><div className="image-actions"><label className="secondary photo-primary"><Camera size={18}/>{photoBusy?'Procesando…':'Añadir con foto'}<input type="file" accept="image/*" capture="environment" onChange={e=>pickImage(e.target.files?.[0])}/></label><button type="button" className="ghost-button" onClick={openCatalog}><Search size={18}/> Buscar botella y datos</button></div><p>{photoMessage||'Haz una foto de la botella o búscala por nombre. Celler Roig intentará reconocerla, completar la ficha y preparar la imagen para la estantería.'}</p></div>
+    <div className="image-picker"><BottleVisual wine={{...form,id:'preview',createdAt:'',manualOrder:0}}/><div className="image-actions"><label className="secondary photo-primary"><Camera size={18}/>{photoBusy?'Procesando foto…':'Añadir con foto'}<input type="file" accept="image/*" capture="environment" onChange={e=>pickImage(e.target.files?.[0])}/></label><button type="button" className="ghost-button" onClick={openCatalog}><Search size={18}/> Buscar botella y datos</button></div><p>{photoMessage||'Haz una foto de frente. Celler Roig leerá la etiqueta y quitará el fondo para dejar solo la botella en la estantería.'}</p></div>
 
     <div className="form-card essentials-card">
       <Field label="Nombre del vino *"><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Ej. Muga Reserva"/></Field>

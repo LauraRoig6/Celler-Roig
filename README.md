@@ -1,8 +1,8 @@
-# Celler Roig · V9
+# Celler Roig · V10
 
 App móvil/PWA para la vinoteca de Pedro.
 
-## Novedades V9
+## Novedades V10
 
 - Rediseño compacto de la ficha de alta/edición: menos cajas grandes y controles más cómodos en móvil.
 - `Ya lo he probado` y `Me lo regalaron` son ahora interruptores compactos y legibles.
@@ -14,7 +14,7 @@ App móvil/PWA para la vinoteca de Pedro.
 - La ficha marca el rango como `Autorrellenado` cuando procede de Internet. Si el usuario lo modifica manualmente, desaparece esa marca.
 - Se ha endurecido de nuevo la detección del tipo de vino: elegir una foto ya no puede cambiar por sí sola un tinto a rosado/blanco por el texto de una imagen.
 - La visualización de la ventana usa `Ahora–2030` cuando el periodo ya ha comenzado.
-- Caché PWA actualizada a V9.
+- Caché PWA actualizada a V10.
 
 ## Variables de entorno en Vercel
 
@@ -26,3 +26,7 @@ No es necesario cambiar estas variables al actualizar desde V8.
 ## Despliegue
 
 Sube el contenido de esta carpeta a la raíz del repositorio conectado a Vercel. Vercel detectará el cambio y desplegará la nueva versión automáticamente.
+
+
+## Foto inteligente (V10)
+La foto móvil usa OCR real con Tesseract.js cuando el navegador no dispone de TextDetector, y segmentación de IA con @imgly/background-removal para separar la botella de fondos no blancos. El primer uso puede tardar algo más porque el navegador descarga y cachea los modelos.
