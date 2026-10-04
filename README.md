@@ -1,41 +1,50 @@
-# Celler Roig — V6
+# Celler Roig · V7
 
-Aplicación móvil/PWA para la vinoteca personal de Pedro Roig.
+Aplicación móvil/PWA para la colección de vinos de Pedro Roig.
 
-## Cambios de esta versión
+## Novedades de V7
 
-- El formulario nuevo ya no pone el año actual automáticamente.
-- Al abrir **Buscar botella y datos** la barra queda vacía salvo que ya hayas escrito el nombre del vino.
-- Se elimina **DOP / IGP** como filtro de la vinoteca.
-- Se elimina **DOP / IGP** como criterio de ordenación; **Denominación** permanece.
-- La colección se puede guardar en **Neon PostgreSQL** además de conservar una copia local en el móvil.
-- La tabla de Neon se crea automáticamente en el primer acceso: no hay que ejecutar SQL manualmente.
+- Navegación principal: **Vinoteca**, **Probados** y **Por probar**.
+- Un mismo vino puede seguir en Vinoteca y aparecer también en Probados.
+- Botellas regaladas: marca de regalo, quién la regaló y fecha.
+- Ficha internacional: país, región, **Denominación / Appellation** y clasificación libre (AOC, DOCG, AVA, etc.).
+- Envejecimiento internacional con opción **Otro** y texto libre.
+- Ubicación física de la botella en casa.
+- Detección de duplicados.
+- Acción **He bebido una** con botón **Deshacer**.
+- Historial de catas y registro de nuevas catas.
+- Dictado de notas cuando el navegador lo permite.
+- Buscador global desde Inicio.
+- “¿Qué abrimos hoy?” con sugerencias según ocasión.
+- Exportación CSV.
+- Flujo **Añadir con foto**: prepara la imagen, intenta hacer transparente un fondo claro y, en navegadores compatibles, intenta leer texto/código de la etiqueta para lanzar la búsqueda.
+- Al elegir una botella de Internet, Celler Roig intenta limpiar el fondo antes de guardarla.
+- Búsqueda internacional mejorada: Francia, Italia, Portugal, EE. UU., Argentina, Chile, Alemania, Australia, Nueva Zelanda, etc.
 
-## Despliegue en Vercel
+## Variables de entorno en Vercel
 
-1. Sube **el contenido de esta carpeta** a la raíz del repositorio de GitHub.
-2. En Vercel importa el repositorio con preset **Vite**.
-3. Build command: `npm run build`.
-4. Output directory: `dist`.
+### `DATABASE_URL`
+Connection string de Neon PostgreSQL. Guarda la colección en la nube.
 
-## Base de datos en Neon
+### `SERPER_API_KEY`
+Clave de Serper para buscar botellas e información en Internet.
 
-1. Crea un proyecto nuevo en Neon para Celler Roig.
-2. Copia la cadena de conexión de PostgreSQL del proyecto.
-3. En Vercel abre **Project → Settings → Environment Variables**.
-4. Crea una variable llamada exactamente `DATABASE_URL` y pega la cadena de conexión.
-5. Actívala para **Production** (y Preview si usas previews).
-6. El siguiente deployment conectará Celler Roig automáticamente con Neon.
+## Despliegue
 
-Celler Roig usa la tabla `celler_roig_wines`. La API `/api/wines` crea la tabla automáticamente y sincroniza altas, cambios, borrados y el orden manual.
+Framework: `Vite`
 
-La app mantiene además `localStorage` como copia local. Si Neon está vacío al conectarse por primera vez, la colección que ya hubiera en el móvil se copia a la nube.
+Build command:
 
-## Búsqueda de vinos
+```bash
+npm run build
+```
 
-La búsqueda visual sigue usando Serper mediante `SERPER_API_KEY` en Vercel. Al buscar se muestran primero fotos de botellas y se intentan completar los datos disponibles.
+Output directory:
 
-Variables de entorno usadas:
+```text
+dist
+```
 
-- `DATABASE_URL` — conexión a Neon.
-- `SERPER_API_KEY` — búsqueda de vinos e imágenes.
+## Nota sobre “Añadir con foto”
+
+Sin contratar un servicio externo de visión artificial, la identificación solo puede aprovechar las capacidades disponibles en el navegador (lectura de texto/códigos cuando existen). La limpieza automática de fondo incluida en V7 funciona especialmente bien con fotos de producto sobre fondo blanco o muy claro; no sustituye todavía a un recorte de IA para fondos complejos.

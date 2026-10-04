@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Archive, BarChart3, Camera, ChevronDown, CirclePlus, Heart, Home, ImagePlus,
-  List, Minus, Pencil, Plus, Search, Settings, SlidersHorizontal, Star, Trash2,
-  Wine as WineIcon, X, Check, ShoppingBag, GlassWater, GripVertical, ExternalLink,
-  RotateCcw,
+  Archive, Camera, ChevronDown, CirclePlus, Clock3, Gift, Heart, Home, ImagePlus,
+  List, MapPin, Mic, Minus, Pencil, Plus, Search, Settings, SlidersHorizontal, Sparkles,
+  Star, Trash2, Undo2, Wine as WineIcon, X, Check, ShoppingBag, GlassWater, GripVertical,
+  ExternalLink, RotateCcw, CheckCircle2,
 } from 'lucide-react';
 import {
   DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
@@ -12,18 +12,20 @@ import {
   SortableContext, arrayMove, rectSortingStrategy, useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { Aging, Protection, SortMode, Wine, WineStatus, WineType } from './types';
+import type { Aging, Protection, SortMode, Tasting, Wine, WineStatus, WineType } from './types';
 import { seedWines } from './seed';
-import { fileToDataUrl, groupLabel, sortWines } from './utils';
+import { detectPhotoClues, displayAging, groupLabel, prepareBottleImageFromFile, prepareBottleImageFromUrl, sortWines } from './utils';
 
-type Tab = 'home' | 'cellar' | 'add' | 'wishlist' | 'settings';
+type Tab = 'home' | 'cellar' | 'tried' | 'add' | 'wishlist' | 'settings';
 type ViewMode = 'shelf' | 'list';
+type CellarFilter = 'Todos' | WineType | 'Favoritos' | 'Regalos' | 'Abrir pronto';
 type CloudStatus = 'connecting' | 'synced' | 'saving' | 'local' | 'error';
+
+type EditableWine = Omit<Wine, 'id' | 'createdAt' | 'manualOrder'>;
 
 const STORAGE_KEY = 'celler-roig:wines:v1';
 const typeOptions: WineType[] = ['Tinto','Blanco','Rosado','Espumoso','Generoso','Otro'];
-const agingOptions: Aging[] = ['Joven','Roble','Crianza','Reserva','Gran Reserva','Sin indicar'];
-const protectionOptions: Protection[] = ['DOP','IGP','Sin indicación'];
+const agingOptions: Aging[] = ['Joven','Roble','Crianza','Reserva','Gran Reserva','Otro','Sin indicar'];
 const sortOptions: {value: SortMode; label: string}[] = [
   { value: 'manual', label: 'Mi orden' },
   { value: 'type', label: 'Tipo de vino' },
@@ -35,29 +37,58 @@ const sortOptions: {value: SortMode; label: string}[] = [
   { value: 'name', label: 'Nombre' },
 ];
 
-const emptyForm = (): Omit<Wine, 'id' | 'createdAt' | 'manualOrder'> => ({
-  name: '', winery: '', vintage: undefined, type: 'Tinto', grapes: [], aging: 'Sin indicar',
-  protection: 'DOP', denomination: '', region: '', country: 'España', alcohol: undefined, price: undefined,
-  shop: '', quantity: 1, status: 'cellar', favorite: false, score: undefined, notes: '', rebuy: '', imageUrl: '',
+const emptyForm = (): EditableWine => ({
+  name: '', winery: '', vintage: undefined, type: 'Tinto', grapes: [], aging: 'Sin indicar', customAging: '',
+  protection: 'Sin indicación', classification: '', denomination: '', region: '', country: '', alcohol: undefined,
+  price: undefined, shop: '', quantity: 1, status: 'cellar', tried: false, wishlist: false, favorite: false,
+  score: undefined, notes: '', rebuy: '', imageUrl: '', location: '', gifted: false, openSoon: false, giftedBy: '', giftDate: '',
+  tastings: [], lastTastedAt: undefined,
 });
+
+function normalizeWine(raw: Partial<Wine>): Wine {
+  const legacyWishlist = raw.wishlist ?? raw.status === 'wishlist';
+  const legacyTried = raw.tried ?? (raw.status === 'tried' || Boolean(raw.score || raw.notes || raw.rebuy));
+  const quantity = Math.max(0, Number(raw.quantity || 0));
+  const protection: Protection = raw.protection || 'Sin indicación';
+  const status: WineStatus = legacyWishlist ? 'wishlist' : quantity > 0 ? 'cellar' : 'tried';
+  return {
+    id: raw.id || crypto.randomUUID(), name: raw.name || '', winery: raw.winery || '', vintage: raw.vintage,
+    type: raw.type || 'Tinto', grapes: Array.isArray(raw.grapes) ? raw.grapes : [], aging: raw.aging || 'Sin indicar',
+    customAging: raw.customAging || '', protection, classification: raw.classification || (protection === 'Sin indicación' ? '' : protection),
+    denomination: raw.denomination || '', region: raw.region || '', country: raw.country || '', alcohol: raw.alcohol,
+    price: raw.price, shop: raw.shop || '', quantity, status, tried: Boolean(legacyTried), wishlist: Boolean(legacyWishlist),
+    favorite: Boolean(raw.favorite), score: raw.score, notes: raw.notes || '', rebuy: raw.rebuy || '', imageUrl: raw.imageUrl || '',
+    location: raw.location || '', gifted: Boolean(raw.gifted), openSoon: Boolean(raw.openSoon), giftedBy: raw.giftedBy || '', giftDate: raw.giftDate || '',
+    tastings: Array.isArray(raw.tastings) ? raw.tastings : [], lastTastedAt: raw.lastTastedAt,
+    createdAt: raw.createdAt || new Date().toISOString(), manualOrder: Number.isFinite(Number(raw.manualOrder)) ? Number(raw.manualOrder) : 0,
+  };
+}
+
+function normalizeCollection(list: unknown): Wine[] {
+  return Array.isArray(list) ? list.map(w => normalizeWine(w as Partial<Wine>)) : [];
+}
 
 function App() {
   const [tab, setTab] = useState<Tab>('home');
   const [wines, setWines] = useState<Wine[]>(() => {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || seedWines; }
-    catch { return seedWines; }
+    try {
+      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+      return parsed ? normalizeCollection(parsed) : normalizeCollection(seedWines);
+    } catch { return normalizeCollection(seedWines); }
   });
   const [selectedWine, setSelectedWine] = useState<Wine | null>(null);
   const [editingWine, setEditingWine] = useState<Wine | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('manual');
   const [viewMode, setViewMode] = useState<ViewMode>('shelf');
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'Todos' | WineType>('Todos');
+  const [typeFilter, setTypeFilter] = useState<CellarFilter>('Todos');
   const [sortOpen, setSortOpen] = useState(false);
-  const [form, setForm] = useState(emptyForm());
+  const [form, setForm] = useState<EditableWine>(emptyForm());
   const [moreInfo, setMoreInfo] = useState(false);
   const [editingShelf, setEditingShelf] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<CloudStatus>('connecting');
+  const [undoDrink, setUndoDrink] = useState<Wine | null>(null);
+  const undoTimer = useRef<number | null>(null);
 
   useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(wines)), [wines]);
 
@@ -71,21 +102,15 @@ function App() {
           if (!cancelled) setCloudStatus(data.code === 'DATABASE_NOT_CONFIGURED' ? 'local' : 'error');
           return;
         }
-        const remoteWines: Wine[] = Array.isArray(data.wines) ? data.wines : [];
+        const remoteWines = normalizeCollection(data.wines);
         if (cancelled) return;
-        if (remoteWines.length) {
-          setWines(remoteWines);
-        } else if (wines.length) {
-          await fetch('/api/wines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wines }) });
-        }
+        if (remoteWines.length) setWines(remoteWines);
+        else if (wines.length) await fetch('/api/wines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wines }) });
         if (!cancelled) setCloudStatus('synced');
-      } catch {
-        if (!cancelled) setCloudStatus('error');
-      }
+      } catch { if (!cancelled) setCloudStatus('error'); }
     }
     loadCloud();
     return () => { cancelled = true; };
-    // We intentionally use the initial local collection only for first-time migration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -134,115 +159,141 @@ function App() {
     } catch { setCloudStatus('error'); }
   }
 
-  const cellarWines = useMemo(() => wines.filter(w => w.status !== 'wishlist'), [wines]);
-  const wishlist = useMemo(() => wines.filter(w => w.status === 'wishlist'), [wines]);
+  const cellarWines = useMemo(() => wines.filter(w => w.quantity > 0 && !w.wishlist), [wines]);
+  const triedWines = useMemo(() => wines.filter(w => w.tried), [wines]);
+  const wishlist = useMemo(() => wines.filter(w => w.wishlist), [wines]);
   const bottleCount = cellarWines.reduce((n, w) => n + w.quantity, 0);
-  const favorites = cellarWines.filter(w => w.favorite);
+  const favorites = wines.filter(w => w.favorite);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return cellarWines.filter(w => {
-      const haystack = [w.name,w.winery,w.type,w.aging,w.protection,w.denomination,w.region,w.country,...w.grapes,String(w.vintage || '')].join(' ').toLowerCase();
-      return (!q || haystack.includes(q)) && (typeFilter === 'Todos' || w.type === typeFilter);
+      const haystack = [w.name,w.winery,w.type,displayAging(w),w.classification,w.denomination,w.region,w.country,w.location,...w.grapes,String(w.vintage || '')].join(' ').toLowerCase();
+      const filterOk = typeFilter === 'Todos' || (typeOptions.includes(typeFilter as WineType) && w.type === typeFilter) || (typeFilter === 'Favoritos' && w.favorite) || (typeFilter === 'Regalos' && w.gifted) || (typeFilter === 'Abrir pronto' && w.openSoon);
+      return (!q || haystack.includes(q)) && filterOk;
     });
   }, [cellarWines, search, typeFilter]);
 
   const sorted = useMemo(() => sortWines(filtered, sortMode), [filtered, sortMode]);
   const groups = useMemo(() => {
     const map = new Map<string, Wine[]>();
-    sorted.forEach(w => {
-      const label = groupLabel(w, sortMode);
-      if (!map.has(label)) map.set(label, []);
-      map.get(label)!.push(w);
-    });
+    sorted.forEach(w => { const label = groupLabel(w, sortMode); if (!map.has(label)) map.set(label, []); map.get(label)!.push(w); });
     return [...map.entries()];
   }, [sorted, sortMode]);
 
+  function duplicateOf(candidate: EditableWine) {
+    const key = (s:string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+    return wines.find(w => key(w.name) === key(candidate.name) && (!candidate.vintage || !w.vintage || w.vintage === candidate.vintage));
+  }
+
+  function formToWine(base?: Wine): Wine {
+    const isWish = form.status === 'wishlist';
+    const isTriedOnly = form.status === 'tried';
+    const quantity = isWish || isTriedOnly ? 0 : Math.max(1, form.quantity);
+    const tried = isTriedOnly ? true : Boolean(form.tried);
+    return normalizeWine({
+      ...(base || {}), ...form, quantity, wishlist: isWish, tried,
+      status: isWish ? 'wishlist' : quantity > 0 ? 'cellar' : 'tried',
+      id: base?.id || crypto.randomUUID(), createdAt: base?.createdAt || new Date().toISOString(),
+      manualOrder: base?.manualOrder ?? Math.max(-1, ...wines.map(w => w.manualOrder)) + 1,
+    });
+  }
+
   function saveForm() {
     if (!form.name.trim()) return;
-    if (editingWine) {
-      const updated: Wine = { ...editingWine, ...form };
-      setWines(prev => prev.map(w => w.id === editingWine.id ? updated : w));
-      setSelectedWine(updated);
-      void persistWine(updated);
-    } else {
-      const wine: Wine = {
-        ...form,
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
-        manualOrder: Math.max(-1, ...wines.map(w => w.manualOrder)) + 1,
-      };
-      setWines(prev => [...prev, wine]);
-      setSelectedWine(wine);
-      void persistWine(wine);
+    if (!editingWine) {
+      const duplicate = duplicateOf(form);
+      if (duplicate) {
+        if (form.status === 'wishlist' && duplicate.quantity > 0) {
+          alert(`“${duplicate.name}${duplicate.vintage ? ` ${duplicate.vintage}` : ''}” ya está en tu Vinoteca.`);
+          setSelectedWine(duplicate); setTab('cellar'); return;
+        }
+        if (confirm(`Ya tienes “${duplicate.name}${duplicate.vintage ? ` ${duplicate.vintage}` : ''}” registrado.\n\n¿Quieres actualizar esa ficha en vez de crear otra?`)) {
+          const updated = normalizeWine({
+            ...duplicate,
+            quantity: form.status === 'cellar' ? Math.max(1, duplicate.quantity + Math.max(1, form.quantity)) : duplicate.quantity,
+            wishlist: form.status === 'wishlist' ? true : false,
+            tried: duplicate.tried || form.status === 'tried' || form.tried,
+            status: form.status === 'wishlist' ? 'wishlist' : Math.max(duplicate.quantity, form.quantity) > 0 ? 'cellar' : 'tried',
+          });
+          setWines(prev => prev.map(w => w.id === duplicate.id ? updated : w));
+          void persistWine(updated);
+          setSelectedWine(updated);
+          setForm(emptyForm()); setMoreInfo(false);
+          setTab(form.status === 'wishlist' ? 'wishlist' : form.status === 'tried' ? 'tried' : 'cellar');
+          return;
+        }
+      }
     }
-    setForm(emptyForm());
-    setEditingWine(null);
-    setMoreInfo(false);
-    setTab(form.status === 'wishlist' ? 'wishlist' : 'cellar');
+
+    const wine = formToWine(editingWine || undefined);
+    if (editingWine) setWines(prev => prev.map(w => w.id === editingWine.id ? wine : w));
+    else setWines(prev => [...prev, wine]);
+    setSelectedWine(wine); void persistWine(wine);
+    const nextTab: Tab = wine.wishlist ? 'wishlist' : wine.quantity > 0 ? 'cellar' : 'tried';
+    setForm(emptyForm()); setEditingWine(null); setMoreInfo(false); setTab(nextTab);
   }
 
   function startEdit(wine: Wine) {
     const { id: _id, createdAt: _created, manualOrder: _order, ...editable } = wine;
-    setForm(editable);
-    setEditingWine(wine);
-    setSelectedWine(null);
-    setMoreInfo(true);
-    setTab('add');
+    setForm({ ...editable, status: wine.wishlist ? 'wishlist' : wine.quantity > 0 ? 'cellar' : 'tried' });
+    setEditingWine(wine); setSelectedWine(null); setMoreInfo(true); setTab('add');
   }
 
   function resetAdd(status: WineStatus = 'cellar') {
     setEditingWine(null);
-    setForm({ ...emptyForm(), status, quantity: status === 'wishlist' ? 0 : 1 });
-    setMoreInfo(false);
-    setTab('add');
+    setForm({ ...emptyForm(), status, wishlist: status === 'wishlist', tried: status === 'tried', quantity: status === 'cellar' ? 1 : 0 });
+    setMoreInfo(false); setTab('add');
   }
 
   function patchWine(id: string, patch: Partial<Wine>) {
-    const current = wines.find(w => w.id === id);
-    if (!current) return;
-    const updated = { ...current, ...patch };
+    const current = wines.find(w => w.id === id); if (!current) return;
+    const updated = normalizeWine({ ...current, ...patch });
     setWines(prev => prev.map(w => w.id === id ? updated : w));
     setSelectedWine(prev => prev?.id === id ? updated : prev);
     void persistWine(updated);
   }
 
   function removeWine(id: string) {
-    setWines(prev => prev.filter(w => w.id !== id));
-    setSelectedWine(null);
-    void deleteRemoteWine(id);
+    setWines(prev => prev.filter(w => w.id !== id)); setSelectedWine(null); void deleteRemoteWine(id);
   }
 
   function moveWishlistToCellar(wine: Wine) {
-    patchWine(wine.id, { status: 'cellar', quantity: Math.max(1, wine.quantity) });
-    setSelectedWine(null);
-    setTab('cellar');
+    patchWine(wine.id, { wishlist: false, status: 'cellar', quantity: Math.max(1, wine.quantity) });
+    setSelectedWine(null); setTab('cellar');
+  }
+
+  function consumeWine(wine: Wine) {
+    if (wine.quantity <= 0) return;
+    if (undoTimer.current) window.clearTimeout(undoTimer.current);
+    setUndoDrink(wine);
+    const nextQty = Math.max(0, wine.quantity - 1);
+    patchWine(wine.id, { quantity: nextQty, tried: true, wishlist: false, status: nextQty > 0 ? 'cellar' : 'tried', lastTastedAt: new Date().toISOString() });
+    undoTimer.current = window.setTimeout(() => setUndoDrink(null), 6500);
+  }
+
+  function undoConsume() {
+    if (!undoDrink) return;
+    setWines(prev => prev.map(w => w.id === undoDrink.id ? undoDrink : w));
+    setSelectedWine(prev => prev?.id === undoDrink.id ? undoDrink : prev);
+    void persistWine(undoDrink); setUndoDrink(null);
+    if (undoTimer.current) window.clearTimeout(undoTimer.current);
   }
 
   return (
     <div className="app-shell">
       <main className="screen">
-        {tab === 'home' && <HomeScreen wines={cellarWines} favorites={favorites} bottleCount={bottleCount} onOpen={setSelectedWine} onGo={setTab} onAdd={() => resetAdd('cellar')} />}
-        {tab === 'cellar' && (
-          <CellarScreen
-            wines={sorted} groups={groups} sortMode={sortMode} setSortMode={setSortMode} sortOpen={sortOpen} setSortOpen={setSortOpen}
-            viewMode={viewMode} setViewMode={setViewMode} search={search} setSearch={setSearch} typeFilter={typeFilter} setTypeFilter={setTypeFilter}
-            onOpen={setSelectedWine}
-            editingShelf={editingShelf} setEditingShelf={setEditingShelf}
-            onReorder={(ids) => {
-              const updated = wines.map(w => ({ ...w, manualOrder: ids.indexOf(w.id) >= 0 ? ids.indexOf(w.id) : w.manualOrder }));
-              setWines(updated);
-              void persistOrder(updated);
-            }}
-          />
-        )}
+        {tab === 'home' && <HomeScreen wines={wines} cellar={cellarWines} tried={triedWines} wishlist={wishlist} favorites={favorites} bottleCount={bottleCount} onOpen={setSelectedWine} onGo={setTab} onAdd={() => resetAdd('cellar')} />}
+        {tab === 'cellar' && <CellarScreen wines={sorted} groups={groups} sortMode={sortMode} setSortMode={setSortMode} sortOpen={sortOpen} setSortOpen={setSortOpen} viewMode={viewMode} setViewMode={setViewMode} search={search} setSearch={setSearch} typeFilter={typeFilter} setTypeFilter={setTypeFilter} onOpen={setSelectedWine} editingShelf={editingShelf} setEditingShelf={setEditingShelf} onReorder={(ids) => { const orderMap = new Map(ids.map((id,i)=>[id,i])); const updated = wines.map(w => orderMap.has(w.id) ? { ...w, manualOrder: orderMap.get(w.id)! } : w); setWines(updated); void persistOrder(updated); }} />}
+        {tab === 'tried' && <TriedScreen wines={triedWines} onOpen={setSelectedWine} onAdd={() => resetAdd('tried')} />}
         {tab === 'wishlist' && <WishlistScreen wines={wishlist} onOpen={setSelectedWine} onAdd={() => resetAdd('wishlist')} />}
         {tab === 'add' && <AddScreen form={form} setForm={setForm} save={saveForm} editing={!!editingWine} moreInfo={moreInfo} setMoreInfo={setMoreInfo} onCancel={() => { setEditingWine(null); setForm(emptyForm()); setTab('cellar'); }} />}
-        {tab === 'settings' && <SettingsScreen wineCount={wines.length} cloudStatus={cloudStatus} onReset={() => { if (confirm('¿Restaurar los vinos de ejemplo?')) { setWines(seedWines); void replaceCloud(seedWines); } }} />}
+        {tab === 'settings' && <SettingsScreen wines={wines} cloudStatus={cloudStatus} onBack={()=>setTab('home')} onReset={() => { if (confirm('¿Restaurar los vinos de ejemplo?')) { const demo = normalizeCollection(seedWines); setWines(demo); void replaceCloud(demo); } }} />}
       </main>
 
-      {tab !== 'add' && <BottomNav tab={tab} setTab={setTab} onAdd={() => resetAdd('cellar')} />}
-      {selectedWine && <WineModal wine={selectedWine} onClose={() => setSelectedWine(null)} onPatch={patchWine} onEdit={startEdit} onDelete={removeWine} onMoveToCellar={moveWishlistToCellar} />}
+      {tab !== 'add' && tab !== 'settings' && <BottomNav tab={tab} setTab={setTab} onAdd={() => resetAdd('cellar')} />}
+      {selectedWine && <WineModal wine={selectedWine} onClose={() => setSelectedWine(null)} onPatch={patchWine} onEdit={startEdit} onDelete={removeWine} onMoveToCellar={moveWishlistToCellar} onConsume={consumeWine} />}
+      {undoDrink && <div className="undo-toast"><div><CheckCircle2 size={18}/><span>Botella descontada</span></div><button onClick={undoConsume}><Undo2 size={17}/> Deshacer</button></div>}
     </div>
   );
 }
@@ -251,29 +302,50 @@ function Header({ eyebrow, title, right }: { eyebrow?: string; title: string; ri
   return <header className="page-header"><div>{eyebrow && <div className="eyebrow">{eyebrow}</div>}<h1>{title}</h1></div>{right}</header>;
 }
 
-function HomeScreen({ wines, favorites, bottleCount, onOpen, onGo, onAdd }: {
-  wines: Wine[]; favorites: Wine[]; bottleCount: number; onOpen: (w: Wine) => void; onGo: (t: Tab) => void; onAdd: () => void;
+function HomeScreen({ wines, cellar, tried, wishlist, favorites, bottleCount, onOpen, onGo, onAdd }: {
+  wines: Wine[]; cellar: Wine[]; tried: Wine[]; wishlist: Wine[]; favorites: Wine[]; bottleCount: number; onOpen:(w:Wine)=>void; onGo:(t:Tab)=>void; onAdd:()=>void;
 }) {
-  const recent = [...wines].sort((a,b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 4);
-  const top = [...favorites].sort((a,b) => (b.score || 0) - (a.score || 0)).slice(0, 3);
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [suggested, setSuggested] = useState<Wine | null>(null);
+  const recent = [...wines].sort((a,b) => (b.lastTastedAt || b.createdAt).localeCompare(a.lastTastedAt || a.createdAt)).slice(0, 4);
+  const q = globalSearch.trim().toLowerCase();
+  const results = q ? wines.filter(w => [w.name,w.winery,w.country,w.region,w.denomination,w.classification,...w.grapes,String(w.vintage||'')].join(' ').toLowerCase().includes(q)).slice(0,5) : [];
+
+  function suggest(kind:'carne'|'pescado'|'aperitivo'|'sorpresa') {
+    let candidates = cellar;
+    if (kind === 'carne') candidates = cellar.filter(w => w.type === 'Tinto' || w.type === 'Generoso');
+    if (kind === 'pescado') candidates = cellar.filter(w => ['Blanco','Rosado','Espumoso'].includes(w.type));
+    if (kind === 'aperitivo') candidates = cellar.filter(w => ['Blanco','Rosado','Espumoso','Generoso'].includes(w.type));
+    if (!candidates.length) candidates = cellar;
+    const ranked = [...candidates].sort((a,b) => (b.favorite?1:0)-(a.favorite?1:0) || (b.score||0)-(a.score||0));
+    const pool = ranked.slice(0, Math.min(5, ranked.length));
+    setSuggested(pool.length ? pool[Math.floor(Math.random()*pool.length)] : null);
+  }
+
   return <div className="page home-page">
     <section className="brand-hero">
       <div className="brand-mark"><WineIcon size={28}/></div>
       <div className="brand-copy"><div className="brand-name">CELLER ROIG</div><div className="brand-sub">La vinoteca de Pedro Roig</div></div>
+      <button className="hero-settings" onClick={()=>onGo('settings')} aria-label="Ajustes"><Settings/></button>
     </section>
 
+    <div className="searchbox global-search"><Search size={20}/><input value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} placeholder="Buscar en Celler Roig…"/></div>
+    {q && <div className="global-results">{results.length ? results.map(w=><button key={w.id} onClick={()=>onOpen(w)}><BottleVisual wine={w} compact/><div><strong>{w.name}</strong><span>{w.denomination || w.winery}{w.vintage?` · ${w.vintage}`:''}</span></div></button>) : <span>No encuentro ese vino.</span>}</div>}
+
     <section className="stats-grid">
-      <button className="stat-card" onClick={() => onGo('cellar')}><strong>{wines.length}</strong><span>vinos</span></button>
       <button className="stat-card" onClick={() => onGo('cellar')}><strong>{bottleCount}</strong><span>botellas en casa</span></button>
-      <button className="stat-card" onClick={() => onGo('cellar')}><strong>{favorites.length}</strong><span>favoritos</span></button>
+      <button className="stat-card" onClick={() => onGo('tried')}><strong>{tried.length}</strong><span>vinos probados</span></button>
+      <button className="stat-card" onClick={() => onGo('wishlist')}><strong>{wishlist.length}</strong><span>por probar</span></button>
     </section>
 
     <button className="primary big-action" onClick={onAdd}><CirclePlus size={23}/> Añadir un vino</button>
 
-    <SectionTitle title="Últimos vinos" action="Ver vinoteca" onAction={() => onGo('cellar')} />
+    {cellar.length > 0 && <section className="open-tonight-card"><div className="open-title"><Sparkles/><div><strong>¿Qué abrimos hoy?</strong><span>Te propongo una botella que tengas en casa.</span></div></div><div className="suggest-chips"><button onClick={()=>suggest('carne')}>Carne</button><button onClick={()=>suggest('pescado')}>Pescado</button><button onClick={()=>suggest('aperitivo')}>Aperitivo</button><button onClick={()=>suggest('sorpresa')}>Sorpréndeme</button></div>{suggested&&<button className="suggested-wine" onClick={()=>onOpen(suggested)}><BottleVisual wine={suggested} compact/><div><small>Mi propuesta</small><strong>{suggested.name}</strong><span>{suggested.vintage || 'Sin añada'} · {suggested.quantity} en casa</span></div></button>}</section>}
+
+    <SectionTitle title="Últimos vinos" />
     <div className="horizontal-cards">{recent.map(w => <WineCard key={w.id} wine={w} onClick={() => onOpen(w)} />)}</div>
 
-    {top.length > 0 && <><SectionTitle title="Tus favoritos"/><div className="mini-list">{top.map(w => <button key={w.id} className="mini-row" onClick={() => onOpen(w)}><BottleVisual wine={w} compact/><div className="mini-copy"><strong>{w.name}</strong><span>{w.denomination || w.winery}</span></div><span className="score-pill"><Star size={14} fill="currentColor"/> {w.score ?? '—'}</span></button>)}</div></>}
+    {favorites.length > 0 && <><SectionTitle title="Favoritos"/><div className="mini-list">{favorites.slice(0,4).map(w => <button key={w.id} className="mini-row" onClick={() => onOpen(w)}><BottleVisual wine={w} compact/><div className="mini-copy"><strong>{w.name}</strong><span>{w.denomination || w.winery}</span></div><span className="score-pill"><Star size={14} fill="currentColor"/> {w.score ?? '—'}</span></button>)}</div></>}
   </div>;
 }
 
@@ -282,332 +354,125 @@ function SectionTitle({ title, action, onAction }: { title: string; action?: str
 }
 
 function CellarScreen(props: {
-  wines: Wine[]; groups: [string, Wine[]][]; sortMode: SortMode; setSortMode: (m: SortMode) => void; sortOpen: boolean; setSortOpen: (v:boolean)=>void;
-  viewMode: ViewMode; setViewMode: (m:ViewMode)=>void; search:string; setSearch:(s:string)=>void; typeFilter:'Todos'|WineType; setTypeFilter:(t:'Todos'|WineType)=>void;
-  onOpen:(w:Wine)=>void;
-  editingShelf:boolean; setEditingShelf:(v:boolean)=>void; onReorder:(ids:string[])=>void;
+  wines: Wine[]; groups: [string,Wine[]][]; sortMode:SortMode; setSortMode:(m:SortMode)=>void; sortOpen:boolean; setSortOpen:(v:boolean)=>void;
+  viewMode:ViewMode; setViewMode:(m:ViewMode)=>void; search:string; setSearch:(s:string)=>void; typeFilter:CellarFilter; setTypeFilter:(t:CellarFilter)=>void;
+  onOpen:(w:Wine)=>void; editingShelf:boolean; setEditingShelf:(v:boolean)=>void; onReorder:(ids:string[])=>void;
 }) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }), useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }));
+  const sensors = useSensors(useSensor(PointerSensor,{activationConstraint:{distance:8}}),useSensor(TouchSensor,{activationConstraint:{delay:220,tolerance:8}}));
   function dragEnd(event: DragEndEvent) {
     if (props.sortMode !== 'manual') return;
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const ids = props.wines.map(w => w.id);
-    const oldIndex = ids.indexOf(String(active.id));
-    const newIndex = ids.indexOf(String(over.id));
-    props.onReorder(arrayMove(ids, oldIndex, newIndex));
+    const { active, over } = event; if (!over || active.id===over.id) return;
+    const ids=props.wines.map(w=>w.id), oldIndex=ids.indexOf(String(active.id)), newIndex=ids.indexOf(String(over.id));
+    props.onReorder(arrayMove(ids,oldIndex,newIndex));
   }
   return <div className="page cellar-page">
-    <Header eyebrow="TU COLECCIÓN" title="Mi vinoteca" right={<div className="view-toggle"><button className={props.viewMode==='shelf'?'active':''} onClick={()=>props.setViewMode('shelf')}><Archive size={18}/></button><button className={props.viewMode==='list'?'active':''} onClick={()=>props.setViewMode('list')}><List size={18}/></button></div>} />
+    <Header eyebrow="EN CASA" title="Vinoteca" right={<div className="view-toggle"><button className={props.viewMode==='shelf'?'active':''} onClick={()=>props.setViewMode('shelf')}><Archive size={18}/></button><button className={props.viewMode==='list'?'active':''} onClick={()=>props.setViewMode('list')}><List size={18}/></button></div>} />
+    <p className="page-intro compact-intro">Aquí aparecen solo las botellas que tienes ahora mismo en casa.</p>
     <div className="searchbox"><Search size={20}/><input value={props.search} onChange={e=>props.setSearch(e.target.value)} placeholder="Buscar vino, uva, denominación…"/></div>
-    <div className="filter-scroll">
-      {(['Todos','Tinto','Blanco','Rosado','Espumoso'] as const).map(x => <button key={x} className={props.typeFilter===x?'chip active':'chip'} onClick={()=>props.setTypeFilter(x)}>{x}</button>)}
-    </div>
-    <div className="filter-row">
-      <div className="sort-wrap">
-        <button className="sort-button" onClick={()=>props.setSortOpen(!props.sortOpen)}><SlidersHorizontal size={18}/>{sortOptions.find(x=>x.value===props.sortMode)?.label}<ChevronDown size={17}/></button>
-        {props.sortOpen && <div className="sort-menu">{sortOptions.map(o=><button key={o.value} onClick={()=>{props.setSortMode(o.value);props.setSortOpen(false);props.setEditingShelf(false)}} className={props.sortMode===o.value?'chosen':''}>{o.label}{props.sortMode===o.value&&<Check size={17}/>}</button>)}</div>}
-      </div>
-    </div>
-    {props.sortMode==='manual' && props.viewMode==='shelf' && <button className={props.editingShelf?'edit-shelf active':'edit-shelf'} onClick={()=>props.setEditingShelf(!props.editingShelf)}><GripVertical size={18}/>{props.editingShelf?'Terminar de ordenar':'Ordenar estantería'}</button>}
-
-    {props.wines.length === 0 ? <EmptyState title="No encuentro vinos" text="Prueba con otro filtro o término de búsqueda."/> : props.viewMode === 'shelf' ? (
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}>
-        <div className="shelf-groups">
-          {props.groups.map(([label, ws]) => <ShelfGroup key={label} label={label} wines={ws} onOpen={props.onOpen} draggable={props.sortMode==='manual'&&props.editingShelf}/>) }
-        </div>
-      </DndContext>
-    ) : <div className="wine-list">{props.wines.map(w=><WineListRow key={w.id} wine={w} onClick={()=>props.onOpen(w)}/>)}</div>}
+    <div className="filter-scroll">{(['Todos','Tinto','Blanco','Rosado','Espumoso','Favoritos','Regalos','Abrir pronto'] as const).map(x=><button key={x} className={props.typeFilter===x?'chip active':'chip'} onClick={()=>props.setTypeFilter(x)}>{x}</button>)}</div>
+    <div className="filter-row"><div className="sort-wrap"><button className="sort-button" onClick={()=>props.setSortOpen(!props.sortOpen)}><SlidersHorizontal size={18}/>{sortOptions.find(x=>x.value===props.sortMode)?.label}<ChevronDown size={17}/></button>{props.sortOpen&&<div className="sort-menu">{sortOptions.map(o=><button key={o.value} onClick={()=>{props.setSortMode(o.value);props.setSortOpen(false);props.setEditingShelf(false)}} className={props.sortMode===o.value?'chosen':''}>{o.label}{props.sortMode===o.value&&<Check size={17}/>}</button>)}</div>}</div></div>
+    {props.sortMode==='manual'&&props.viewMode==='shelf'&&<button className={props.editingShelf?'edit-shelf active':'edit-shelf'} onClick={()=>props.setEditingShelf(!props.editingShelf)}><GripVertical size={18}/>{props.editingShelf?'Terminar de ordenar':'Ordenar estantería'}</button>}
+    {props.wines.length===0?<EmptyState title="Tu vinoteca está vacía" text="Cuando registres una botella que tengas en casa aparecerá aquí."/>:props.viewMode==='shelf'?<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}><div className="shelf-groups">{props.groups.map(([label,ws])=><ShelfGroup key={label} label={label} wines={ws} onOpen={props.onOpen} draggable={props.sortMode==='manual'&&props.editingShelf}/>)}</div></DndContext>:<div className="wine-list">{props.wines.map(w=><WineListRow key={w.id} wine={w} onClick={()=>props.onOpen(w)}/>)}</div>}
   </div>;
 }
 
-const SHELF_CAPACITY = 3;
-
-function ShelfGroup({ label, wines, onOpen, draggable }: { label:string; wines:Wine[]; onOpen:(w:Wine)=>void; draggable:boolean }) {
-  const shelves: Wine[][] = [];
-  for (let i = 0; i < wines.length; i += SHELF_CAPACITY) shelves.push(wines.slice(i, i + SHELF_CAPACITY));
-
-  return <section className="shelf-section">
-    <div className="shelf-heading"><h2>{label}</h2><span>{wines.length} {wines.length===1?'vino':'vinos'} · {shelves.length} {shelves.length===1?'balda':'baldas'}</span></div>
-    <SortableContext items={wines.map(w=>w.id)} strategy={rectSortingStrategy}>
-      <div className="shelf-stack">
-        {shelves.map((row, index) => <div className="shelf-row" key={`${label}-${index}`}>
-          <div className="shelf-grid">{row.map(w=><SortableBottle key={w.id} wine={w} onOpen={onOpen} enabled={draggable}/>)}</div>
-          <div className="wood-shelf" aria-hidden="true"><div/></div>
-        </div>)}
-      </div>
-    </SortableContext>
-  </section>;
+const SHELF_CAPACITY=3;
+function ShelfGroup({label,wines,onOpen,draggable}:{label:string;wines:Wine[];onOpen:(w:Wine)=>void;draggable:boolean}) {
+  const shelves:Wine[][]=[]; for(let i=0;i<wines.length;i+=SHELF_CAPACITY)shelves.push(wines.slice(i,i+SHELF_CAPACITY));
+  return <section className="shelf-section"><div className="shelf-heading"><h2>{label}</h2><span>{wines.length} {wines.length===1?'vino':'vinos'} · {shelves.length} {shelves.length===1?'balda':'baldas'}</span></div><SortableContext items={wines.map(w=>w.id)} strategy={rectSortingStrategy}><div className="shelf-stack">{shelves.map((row,index)=><div className="shelf-row" key={`${label}-${index}`}><div className="shelf-grid">{row.map(w=><SortableBottle key={w.id} wine={w} onOpen={onOpen} enabled={draggable}/>)}</div><div className="wood-shelf" aria-hidden="true"><div/></div></div>)}</div></SortableContext></section>;
 }
 
-function SortableBottle({ wine, onOpen, enabled }: { wine:Wine; onOpen:(w:Wine)=>void; enabled:boolean }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: wine.id, disabled: !enabled });
-  const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging?20:1 };
-  return <button ref={setNodeRef} style={style} {...(enabled?attributes:{})} {...(enabled?listeners:{})} className={`shelf-bottle ${isDragging?'dragging':''} ${enabled?'reorder':''}`} onClick={()=>!enabled&&onOpen(wine)}>
-    {enabled && <span className="drag-dot"><GripVertical size={18}/></span>}
-    <BottleVisual wine={wine}/><span className="bottle-name">{wine.name}</span><span className="bottle-meta">{wine.vintage || 's/a'} · {wine.quantity} ud.</span>
-  </button>;
+function SortableBottle({wine,onOpen,enabled}:{wine:Wine;onOpen:(w:Wine)=>void;enabled:boolean}) {
+  const {attributes,listeners,setNodeRef,transform,transition,isDragging}=useSortable({id:wine.id,disabled:!enabled});
+  const style={transform:CSS.Transform.toString(transform),transition,zIndex:isDragging?20:1};
+  return <button ref={setNodeRef} style={style} {...(enabled?attributes:{})} {...(enabled?listeners:{})} className={`shelf-bottle ${isDragging?'dragging':''} ${enabled?'reorder':''}`} onClick={()=>!enabled&&onOpen(wine)}>{enabled&&<span className="drag-dot"><GripVertical size={18}/></span>}<BottleVisual wine={wine}/><span className="bottle-name">{wine.name}</span><span className="bottle-meta">{wine.vintage||'s/a'} · {wine.quantity} ud.</span>{wine.gifted&&<span className="shelf-badge"><Gift size={11}/></span>}</button>;
 }
 
-function BottleVisual({ wine, compact=false }: { wine:Wine; compact?:boolean }) {
-  if (wine.imageUrl) return <div className={compact?'bottle-image compact':'bottle-image'}><img src={wine.imageUrl} alt={wine.name}/></div>;
-  return <div className={compact?'bottle-placeholder compact':'bottle-placeholder'} aria-label="Botella sin imagen">
-    <div className="bottle-neck"/><div className="bottle-body"><div className="fake-label"><span>{wine.name.split(' ')[0]}</span><small>{wine.vintage || ''}</small></div></div>
-  </div>;
+function BottleVisual({wine,compact=false}:{wine:Wine;compact?:boolean}) {
+  if(wine.imageUrl)return <div className={compact?'bottle-image compact':'bottle-image'}><img src={wine.imageUrl} alt={wine.name}/></div>;
+  return <div className={compact?'bottle-placeholder compact':'bottle-placeholder'} aria-label="Botella sin imagen"><div className="bottle-neck"/><div className="bottle-body"><div className="fake-label"><span>{wine.name.split(' ')[0]}</span><small>{wine.vintage||''}</small></div></div></div>;
 }
 
-function WineCard({ wine, onClick }: { wine:Wine; onClick:()=>void }) {
-  return <button className="wine-card" onClick={onClick}><div className="wine-card-image"><BottleVisual wine={wine}/>{wine.favorite&&<span className="heart-float"><Heart size={15} fill="currentColor"/></span>}</div><strong>{wine.name}</strong><span>{wine.denomination || wine.winery}{wine.vintage ? ` · ${wine.vintage}`:''}</span><div className="card-bottom"><span>{wine.quantity} {wine.quantity===1?'botella':'botellas'}</span>{wine.score&&<b><Star size={13} fill="currentColor"/>{wine.score}</b>}</div></button>;
+function WineCard({wine,onClick}:{wine:Wine;onClick:()=>void}) {
+  return <button className="wine-card" onClick={onClick}><div className="wine-card-image"><BottleVisual wine={wine}/>{wine.favorite&&<span className="heart-float"><Heart size={15} fill="currentColor"/></span>}{wine.gifted&&<span className="gift-float"><Gift size={14}/></span>}</div><strong>{wine.name}</strong><span>{wine.denomination||wine.winery}{wine.vintage?` · ${wine.vintage}`:''}</span><div className="card-bottom"><span>{wine.quantity>0?`${wine.quantity} ${wine.quantity===1?'botella':'botellas'}`:wine.tried?'Probado':'Por probar'}</span>{wine.score&&<b><Star size={13} fill="currentColor"/>{wine.score}</b>}</div></button>;
 }
 
-function WineListRow({ wine, onClick }: { wine:Wine; onClick:()=>void }) {
-  return <button className="wine-list-row" onClick={onClick}><BottleVisual wine={wine} compact/><div className="wine-list-copy"><strong>{wine.name}</strong><span>{wine.protection !== 'Sin indicación' ? `${wine.protection} · `:''}{wine.denomination || wine.winery}</span><small>{wine.vintage || 'Sin añada'} · {wine.aging}</small></div><div className="wine-list-side">{wine.score&&<span><Star size={13} fill="currentColor"/>{wine.score}</span>}<b>{wine.quantity}</b></div></button>;
+function WineListRow({wine,onClick}:{wine:Wine;onClick:()=>void}) {
+  return <button className="wine-list-row" onClick={onClick}><BottleVisual wine={wine} compact/><div className="wine-list-copy"><strong>{wine.name}{wine.gifted&&<Gift size={13}/>}</strong><span>{wine.denomination||wine.winery}</span><small>{wine.vintage||'Sin añada'} · {displayAging(wine)}</small></div><div className="wine-list-side">{wine.score&&<span><Star size={13} fill="currentColor"/>{wine.score}</span>}<b>{wine.quantity}</b></div></button>;
 }
 
-function WishlistScreen({ wines, onOpen, onAdd }: { wines:Wine[]; onOpen:(w:Wine)=>void; onAdd:()=>void }) {
-  return <div className="page wishlist-page"><Header eyebrow="PARA EL FUTURO" title="Me gustaría probar" right={<button className="circle-action" onClick={onAdd}><Plus/></button>}/>
-    <p className="page-intro">Guarda aquí vinos que hayas visto o te hayan recomendado.</p>
-    {wines.length===0?<EmptyState title="Tu lista está vacía" text="Añade vinos que quieras probar más adelante." action="Añadir vino" onAction={onAdd}/>:<div className="wishlist-grid">{wines.map(w=><button className="wish-card" key={w.id} onClick={()=>onOpen(w)}><div className="wish-image"><BottleVisual wine={w}/></div><div><strong>{w.name}</strong><span>{w.winery}</span>{w.denomination&&<small>{w.protection !== 'Sin indicación' ? `${w.protection} · `:''}{w.denomination}</small>}</div></button>)}</div>}
-  </div>;
+function TriedScreen({wines,onOpen,onAdd}:{wines:Wine[];onOpen:(w:Wine)=>void;onAdd:()=>void}) {
+  const [q,setQ]=useState('');
+  const filtered=useMemo(()=>{const s=q.toLowerCase().trim();return [...wines].filter(w=>!s||[w.name,w.winery,w.denomination,w.country,...w.grapes].join(' ').toLowerCase().includes(s)).sort((a,b)=>(b.lastTastedAt||b.createdAt).localeCompare(a.lastTastedAt||a.createdAt));},[wines,q]);
+  return <div className="page tried-page"><Header eyebrow="TU MEMORIA" title="Probados" right={<button className="circle-action" onClick={onAdd}><Plus/></button>}/><p className="page-intro">Aquí quedan los vinos que ya has probado, aunque ya no tengas ninguna botella.</p><div className="searchbox"><Search size={20}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar entre los probados…"/></div>{filtered.length===0?<EmptyState title="Aún no hay vinos probados" text="Cuando marques un vino como probado quedará guardado aquí." action="Añadir un probado" onAction={onAdd}/>:<div className="tried-list">{filtered.map(w=><button key={w.id} className="tried-card" onClick={()=>onOpen(w)}><div className="tried-photo"><BottleVisual wine={w}/></div><div className="tried-copy"><div><strong>{w.name}</strong>{w.score!=null&&<span className="score-pill"><Star size={13} fill="currentColor"/>{w.score}</span>}</div><span>{w.denomination||w.winery}{w.vintage?` · ${w.vintage}`:''}</span><small>{w.lastTastedAt?`Última vez: ${formatDate(w.lastTastedAt)}`:'Probado'}{w.quantity>0?` · ${w.quantity} en casa`:''}</small>{w.rebuy&&<em>{w.rebuy==='Sí'?'✓ Lo compraría otra vez':`Volver a comprar: ${w.rebuy}`}</em>}</div></button>)}</div>}</div>;
 }
 
-type ImportedWineData = {
-  name?: string;
-  winery?: string;
-  vintage?: number;
-  type?: WineType;
-  grapes?: string[];
-  aging?: Aging;
-  protection?: Protection;
-  denomination?: string;
-  region?: string;
-  country?: string;
-  alcohol?: number;
-  price?: number;
-  imageUrl?: string;
-  sourceUrl?: string;
-  sourceTitle?: string;
-  fieldsFound?: number;
-  categories?: string;
-  rawText?: string;
-};
-
-type WineSearchResult = {
-  id: string;
-  title: string;
-  url: string;
-  snippet?: string;
-  source?: string;
-  provider?: 'web';
-};
-
-type WineImageResult = {
-  id: string;
-  title: string;
-  imageUrl: string;
-  thumbnailUrl?: string;
-  pageUrl?: string;
-  source?: string;
-};
-
-function inferWineType(categories = ''): WineType | undefined {
-  const value = categories.toLowerCase();
-  if (value.includes('sparkling') || value.includes('espumoso') || value.includes('champagne') || value.includes('cava')) return 'Espumoso';
-  if (value.includes('rosé') || value.includes('rose wine') || value.includes('rosado')) return 'Rosado';
-  if (value.includes('white wine') || value.includes('vino blanco') || value.includes('white wines') || /\bblanco\b/.test(value)) return 'Blanco';
-  if (value.includes('red wine') || value.includes('vino tinto') || value.includes('red wines') || /\btinto\b/.test(value)) return 'Tinto';
-  return undefined;
+function WishlistScreen({wines,onOpen,onAdd}:{wines:Wine[];onOpen:(w:Wine)=>void;onAdd:()=>void}) {
+  return <div className="page wishlist-page"><Header eyebrow="LISTA DE DESEOS" title="Por probar" right={<button className="circle-action" onClick={onAdd}><Plus/></button>}/><p className="page-intro">Vinos que has visto, te han recomendado o quieres comprar algún día.</p>{wines.length===0?<EmptyState title="Tu lista está vacía" text="Añade vinos que quieras probar más adelante." action="Añadir vino" onAction={onAdd}/>:<div className="wishlist-grid">{wines.map(w=><button className="wish-card" key={w.id} onClick={()=>onOpen(w)}><div className="wish-image"><BottleVisual wine={w}/></div><div><strong>{w.name}</strong><span>{w.winery}</span>{w.denomination&&<small>{w.denomination}</small>}</div></button>)}</div>}</div>;
 }
 
-function inferAgingText(text = ''): Aging | undefined {
-  const value = text.toLowerCase();
-  if (value.includes('gran reserva')) return 'Gran Reserva';
-  if (/\breserva\b/.test(value)) return 'Reserva';
-  if (/\bcrianza\b/.test(value)) return 'Crianza';
-  if (/\broble\b|barrica/.test(value)) return 'Roble';
-  if (/\bjoven\b/.test(value)) return 'Joven';
-  return undefined;
-}
+type ImportedWineData={name?:string;winery?:string;vintage?:number;type?:WineType;grapes?:string[];aging?:Aging;protection?:Protection;classification?:string;denomination?:string;region?:string;country?:string;alcohol?:number;price?:number;imageUrl?:string;sourceUrl?:string;sourceTitle?:string;fieldsFound?:number;categories?:string;rawText?:string;};
+type WineImageResult={id:string;title:string;imageUrl:string;thumbnailUrl?:string;pageUrl?:string;source?:string;};
 
-function AddScreen({ form, setForm, save, editing, moreInfo, setMoreInfo, onCancel }: {
-  form: Omit<Wine,'id'|'createdAt'|'manualOrder'>; setForm: React.Dispatch<React.SetStateAction<Omit<Wine,'id'|'createdAt'|'manualOrder'>>>; save:()=>void; editing:boolean; moreInfo:boolean; setMoreInfo:(v:boolean)=>void; onCancel:()=>void;
-}) {
-  const [catalogOpen, setCatalogOpen] = useState(false);
-  async function pickImage(file?: File) {
-    if (!file) return;
-    const data = await fileToDataUrl(file);
-    setForm(f=>({...f,imageUrl:data}));
-  }
-  function useImportedWine(product: ImportedWineData) {
-    const raw = `${product.name || ''} ${product.categories || ''} ${product.rawText || ''}`;
-    const inferredVintage = product.vintage || Number(product.name?.match(/\b(19|20)\d{2}\b/)?.[0]) || undefined;
-    const inferredType = product.type || inferWineType(raw);
-    const inferredAging = product.aging && product.aging !== 'Sin indicar' ? product.aging : inferAgingText(raw);
-    setForm(f => ({
-      ...f,
-      name: product.name?.trim() || f.name,
-      winery: product.winery?.trim() || f.winery,
-      vintage: inferredVintage || f.vintage,
-      type: inferredType || f.type,
-      grapes: product.grapes?.length ? product.grapes : f.grapes,
-      aging: inferredAging || f.aging,
-      protection: product.protection || f.protection,
-      denomination: product.denomination?.trim() || f.denomination,
-      region: product.region?.trim() || f.region,
-      country: product.country?.trim() || f.country,
-      alcohol: product.alcohol || f.alcohol,
-      price: product.price || f.price,
-      imageUrl: product.imageUrl || f.imageUrl,
-    }));
-    setMoreInfo(true);
-    setCatalogOpen(false);
-  }
+function inferWineType(categories=''):WineType|undefined{const value=categories.toLowerCase();if(value.includes('sparkling')||value.includes('espumoso')||value.includes('champagne')||value.includes('cava'))return'Espumoso';if(value.includes('rosé')||value.includes('rose wine')||value.includes('rosado'))return'Rosado';if(value.includes('white wine')||value.includes('vino blanco')||/\bblanco\b/.test(value))return'Blanco';if(value.includes('red wine')||value.includes('vino tinto')||/\btinto\b/.test(value))return'Tinto';return undefined;}
+function inferAgingText(text=''):Aging|undefined{const value=text.toLowerCase();if(value.includes('gran reserva'))return'Gran Reserva';if(/\breserva\b/.test(value))return'Reserva';if(/\bcrianza\b/.test(value))return'Crianza';if(/\broble\b|barrica/.test(value))return'Roble';if(/\bjoven\b/.test(value))return'Joven';return undefined;}
+
+function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{form:EditableWine;setForm:React.Dispatch<React.SetStateAction<EditableWine>>;save:()=>void;editing:boolean;moreInfo:boolean;setMoreInfo:(v:boolean)=>void;onCancel:()=>void;}) {
+  const [catalogOpen,setCatalogOpen]=useState(false); const [catalogInitial,setCatalogInitial]=useState(''); const [photoMessage,setPhotoMessage]=useState(''); const [photoBusy,setPhotoBusy]=useState(false); const [dictating,setDictating]=useState(false);
+  async function pickImage(file?:File){if(!file)return;setPhotoBusy(true);setPhotoMessage('Preparando la foto…');try{const [data,clue]=await Promise.all([prepareBottleImageFromFile(file),detectPhotoClues(file)]);setForm(f=>({...f,imageUrl:data}));if(clue){setPhotoMessage('He leído parte de la etiqueta. Buscando coincidencias…');setCatalogInitial(clue);setCatalogOpen(true);}else setPhotoMessage('Foto guardada. He intentado limpiar el fondo automáticamente.');}catch{setPhotoMessage('Foto guardada.');}finally{setPhotoBusy(false);}}
+  function openCatalog(){setCatalogInitial([form.name,form.winery,form.vintage].filter(Boolean).join(' '));setCatalogOpen(true);}
+  function useImportedWine(product:ImportedWineData){const raw=`${product.name||''} ${product.categories||''} ${product.rawText||''}`;const inferredVintage=product.vintage||Number(product.name?.match(/\b(19|20)\d{2}\b/)?.[0])||undefined;const inferredType=product.type||inferWineType(raw);const inferredAging=product.aging&&product.aging!=='Sin indicar'?product.aging:inferAgingText(raw);setForm(f=>({...f,name:product.name?.trim()||f.name,winery:product.winery?.trim()||f.winery,vintage:inferredVintage||f.vintage,type:inferredType||f.type,grapes:product.grapes?.length?product.grapes:f.grapes,aging:inferredAging||f.aging,protection:product.protection||f.protection,classification:product.classification?.trim()||f.classification,denomination:product.denomination?.trim()||f.denomination,region:product.region?.trim()||f.region,country:product.country?.trim()||f.country,alcohol:product.alcohol||f.alcohol,price:product.price||f.price,imageUrl:product.imageUrl||f.imageUrl}));setMoreInfo(true);setCatalogOpen(false);}
+  function dictate(){const w=window as any;const Speech=w.SpeechRecognition||w.webkitSpeechRecognition;if(!Speech){alert('El dictado no está disponible en este navegador. Puedes usar el micrófono del teclado del móvil.');return;}const r=new Speech();r.lang='es-ES';r.interimResults=false;r.maxAlternatives=1;setDictating(true);r.onresult=(e:any)=>{const text=e.results?.[0]?.[0]?.transcript||'';setForm(f=>({...f,notes:[f.notes,text].filter(Boolean).join(f.notes?' ':'')}));};r.onerror=()=>setDictating(false);r.onend=()=>setDictating(false);r.start();}
   return <div className="page add-page"><div className="add-top"><button className="icon-button" onClick={onCancel}><X/></button><div><div className="eyebrow">{editing?'EDITAR':'NUEVO VINO'}</div><h1>{editing?'Editar vino':'Añadir vino'}</h1></div><button className="save-top" onClick={save}>Guardar</button></div>
-
-    <div className="image-picker">
-      <BottleVisual wine={{...form,id:'preview',createdAt:'',manualOrder:0}} />
-      <div className="image-actions">
-        <label className="secondary"><Camera size={18}/> Hacer / elegir foto<input type="file" accept="image/*" capture="environment" onChange={e=>pickImage(e.target.files?.[0])}/></label>
-        <button type="button" className="ghost-button" onClick={()=>setCatalogOpen(true)}><Search size={18}/> Buscar botella y datos</button>
-      </div>
-      <p>Busca el vino y elige su botella. Celler Roig intentará completar automáticamente la información que encuentre.</p>
+    <div className="image-picker"><BottleVisual wine={{...form,id:'preview',createdAt:'',manualOrder:0}}/><div className="image-actions"><label className="secondary photo-primary"><Camera size={18}/>{photoBusy?'Procesando…':'Añadir con foto'}<input type="file" accept="image/*" capture="environment" onChange={e=>pickImage(e.target.files?.[0])}/></label><button type="button" className="ghost-button" onClick={openCatalog}><Search size={18}/> Buscar botella y datos</button></div><p>{photoMessage||'Haz una foto de la botella o búscala por nombre. Si la foto tiene un fondo claro, Celler Roig intentará dejarlo transparente automáticamente.'}</p></div>
+    <div className="form-card"><Field label="Nombre del vino *"><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Ej. Muga Reserva"/></Field><div className="two-cols"><Field label="Añada"><input type="number" inputMode="numeric" value={form.vintage||''} onChange={e=>setForm(f=>({...f,vintage:e.target.value?Number(e.target.value):undefined}))}/></Field><Field label="Bodega / productor"><input value={form.winery} onChange={e=>setForm(f=>({...f,winery:e.target.value}))} placeholder="Bodegas Muga"/></Field></div><Field label="Tipo"><div className="choice-grid">{typeOptions.slice(0,4).map(t=><button type="button" key={t} className={form.type===t?'choice active':'choice'} onClick={()=>setForm(f=>({...f,type:t}))}>{t}</button>)}</div></Field><Field label="¿Dónde va?"><div className="choice-grid three"><button type="button" className={form.status==='cellar'?'choice active':'choice'} onClick={()=>setForm(f=>({...f,status:'cellar',wishlist:false,quantity:Math.max(1,f.quantity)}))}>Vinoteca</button><button type="button" className={form.status==='tried'?'choice active':'choice'} onClick={()=>setForm(f=>({...f,status:'tried',wishlist:false,tried:true,quantity:0}))}>Probados</button><button type="button" className={form.status==='wishlist'?'choice active':'choice'} onClick={()=>setForm(f=>({...f,status:'wishlist',wishlist:true,quantity:0}))}>Por probar</button></div></Field>{form.status==='cellar'&&<><Field label="Botellas en casa"><div className="qty-control"><button type="button" onClick={()=>setForm(f=>({...f,quantity:Math.max(1,f.quantity-1)}))}><Minus/></button><strong>{form.quantity}</strong><button type="button" onClick={()=>setForm(f=>({...f,quantity:f.quantity+1}))}><Plus/></button></div></Field><label className="big-check"><input type="checkbox" checked={form.tried} onChange={e=>setForm(f=>({...f,tried:e.target.checked}))}/><span><Check size={18}/></span><div><strong>Ya lo he probado</strong><small>Así también aparecerá en “Probados”.</small></div></label><Field label="Dónde está guardado"><div className="input-with-icon"><MapPin size={17}/><input value={form.location} onChange={e=>setForm(f=>({...f,location:e.target.value}))} placeholder="Ej. mueble del salón · balda 2"/></div></Field></>}
+      <label className="big-check gift-check"><input type="checkbox" checked={form.gifted} onChange={e=>setForm(f=>({...f,gifted:e.target.checked}))}/><span><Gift size={18}/></span><div><strong>Me lo regalaron</strong><small>Guarda quién te lo regaló si quieres.</small></div></label>{form.gifted&&<div className="two-cols"><Field label="Quién me lo regaló"><input value={form.giftedBy} onChange={e=>setForm(f=>({...f,giftedBy:e.target.value}))} placeholder="Nombre"/></Field><Field label="Fecha del regalo"><input type="date" value={form.giftDate} onChange={e=>setForm(f=>({...f,giftDate:e.target.value}))}/></Field></div>}
     </div>
-
-    <div className="form-card">
-      <Field label="Nombre del vino *"><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Ej. Muga Reserva"/></Field>
-      <div className="two-cols"><Field label="Añada"><input type="number" inputMode="numeric" value={form.vintage || ''} onChange={e=>setForm(f=>({...f,vintage:e.target.value?Number(e.target.value):undefined}))}/></Field><Field label="Bodega"><input value={form.winery} onChange={e=>setForm(f=>({...f,winery:e.target.value}))} placeholder="Bodegas Muga"/></Field></div>
-      <Field label="Tipo"><div className="choice-grid">{typeOptions.slice(0,4).map(t=><button type="button" key={t} className={form.type===t?'choice active':'choice'} onClick={()=>setForm(f=>({...f,type:t}))}>{t}</button>)}</div></Field>
-      <Field label="¿Dónde lo guardamos?"><div className="choice-grid three"><button className={form.status==='cellar'?'choice active':'choice'} onClick={()=>setForm(f=>({...f,status:'cellar',quantity:Math.max(1,f.quantity)}))}>En casa</button><button className={form.status==='tried'?'choice active':'choice'} onClick={()=>setForm(f=>({...f,status:'tried',quantity:0}))}>Probado</button><button className={form.status==='wishlist'?'choice active':'choice'} onClick={()=>setForm(f=>({...f,status:'wishlist',quantity:0}))}>Por probar</button></div></Field>
-      {form.status==='cellar' && <Field label="Botellas en casa"><div className="qty-control"><button onClick={()=>setForm(f=>({...f,quantity:Math.max(0,f.quantity-1)}))}><Minus/></button><strong>{form.quantity}</strong><button onClick={()=>setForm(f=>({...f,quantity:f.quantity+1}))}><Plus/></button></div></Field>}
-    </div>
-
     <button className="more-toggle" onClick={()=>setMoreInfo(!moreInfo)}><span><SlidersHorizontal size={19}/> Más información</span><ChevronDown className={moreInfo?'rotated':''}/></button>
-    {moreInfo && <div className="form-card advanced">
-      <Field label="Uva / variedades"><input value={form.grapes.join(', ')} onChange={e=>setForm(f=>({...f,grapes:e.target.value.split(',').map(x=>x.trim()).filter(Boolean)}))} placeholder="Tempranillo, Garnacha"/></Field>
-      <div className="two-cols"><Field label="Envejecimiento"><select value={form.aging} onChange={e=>setForm(f=>({...f,aging:e.target.value as Aging}))}>{agingOptions.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Protección"><select value={form.protection} onChange={e=>setForm(f=>({...f,protection:e.target.value as Protection}))}>{protectionOptions.map(x=><option key={x}>{x}</option>)}</select></Field></div>
-      <Field label={form.protection==='DOP'?'DOP / Denominación':form.protection==='IGP'?'IGP / Indicación geográfica':'Zona / denominación'}><input value={form.denomination} onChange={e=>setForm(f=>({...f,denomination:e.target.value}))} placeholder="Ej. Rioja, Utiel-Requena…"/></Field>
-      <div className="two-cols"><Field label="Región"><input value={form.region} onChange={e=>setForm(f=>({...f,region:e.target.value}))}/></Field><Field label="País"><input value={form.country} onChange={e=>setForm(f=>({...f,country:e.target.value}))}/></Field></div>
-      <div className="two-cols"><Field label="Precio (€)"><input type="number" inputMode="decimal" step="0.01" value={form.price ?? ''} onChange={e=>setForm(f=>({...f,price:e.target.value?Number(e.target.value):undefined}))}/></Field><Field label="Dónde lo compré"><input value={form.shop} onChange={e=>setForm(f=>({...f,shop:e.target.value}))}/></Field></div>
-      <Field label="Graduación (% vol.)"><input type="number" inputMode="decimal" step="0.1" value={form.alcohol ?? ''} onChange={e=>setForm(f=>({...f,alcohol:e.target.value?Number(e.target.value):undefined}))}/></Field>
-      <Field label="Puntuación (0–10)"><input type="number" inputMode="decimal" min="0" max="10" step="0.1" value={form.score ?? ''} onChange={e=>setForm(f=>({...f,score:e.target.value?Math.min(10,Math.max(0,Number(e.target.value))):undefined}))}/></Field>
-      <Field label="¿Lo comprarías otra vez?"><div className="choice-grid three">{(['Sí','Quizá','No'] as const).map(x=><button key={x} className={form.rebuy===x?'choice active':'choice'} onClick={()=>setForm(f=>({...f,rebuy:x}))}>{x}</button>)}</div></Field>
-      <Field label="Notas"><textarea rows={4} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Qué te pareció, con qué lo tomaste…"/></Field>
-    </div>}
+    {moreInfo&&<div className="form-card advanced"><Field label="Uva / variedades"><input value={form.grapes.join(', ')} onChange={e=>setForm(f=>({...f,grapes:e.target.value.split(',').map(x=>x.trim()).filter(Boolean)}))} placeholder="Tempranillo, Merlot, Pinot Noir…"/></Field><div className="two-cols"><Field label="Envejecimiento"><select value={form.aging} onChange={e=>setForm(f=>({...f,aging:e.target.value as Aging}))}>{agingOptions.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Clasificación"><input value={form.classification} onChange={e=>setForm(f=>({...f,classification:e.target.value}))} placeholder="AOC, DOCG, AVA…"/></Field></div>{form.aging==='Otro'&&<Field label="Envejecimiento / mención"><input value={form.customAging} onChange={e=>setForm(f=>({...f,customAging:e.target.value}))} placeholder="Ej. 18 meses en roble francés"/></Field>}<Field label="Denominación / Appellation"><input value={form.denomination} onChange={e=>setForm(f=>({...f,denomination:e.target.value}))} placeholder="Rioja, Bordeaux, Chianti Classico, Napa Valley…"/></Field><div className="two-cols"><Field label="Región"><input value={form.region} onChange={e=>setForm(f=>({...f,region:e.target.value}))} placeholder="Bourgogne, Mendoza…"/></Field><Field label="País"><input value={form.country} onChange={e=>setForm(f=>({...f,country:e.target.value}))} placeholder="España, Francia, Italia…"/></Field></div><div className="two-cols"><Field label="Precio (€)"><input type="number" inputMode="decimal" step="0.01" value={form.price??''} onChange={e=>setForm(f=>({...f,price:e.target.value?Number(e.target.value):undefined}))}/></Field><Field label="Dónde lo compré / vi"><input value={form.shop} onChange={e=>setForm(f=>({...f,shop:e.target.value}))}/></Field></div><Field label="Graduación (% vol.)"><input type="number" inputMode="decimal" step="0.1" value={form.alcohol??''} onChange={e=>setForm(f=>({...f,alcohol:e.target.value?Number(e.target.value):undefined}))}/></Field><Field label="Puntuación (0–10)"><input type="number" inputMode="decimal" min="0" max="10" step="0.1" value={form.score??''} onChange={e=>setForm(f=>({...f,score:e.target.value?Math.min(10,Math.max(0,Number(e.target.value))):undefined}))}/></Field><Field label="¿Lo comprarías otra vez?"><div className="choice-grid three">{(['Sí','Quizá','No'] as const).map(x=><button type="button" key={x} className={form.rebuy===x?'choice active':'choice'} onClick={()=>setForm(f=>({...f,rebuy:x}))}>{x}</button>)}</div></Field><Field label="Notas"><div className="notes-input-head"><span>Tu opinión</span><button type="button" className={dictating?'dictate active':'dictate'} onClick={dictate}><Mic size={16}/>{dictating?'Escuchando…':'Dictar'}</button></div><textarea rows={4} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Qué te pareció, con qué lo tomaste…"/></Field></div>}
     <button className="primary save-bottom" onClick={save}>{editing?'Guardar cambios':'Guardar vino'}</button>
-    {catalogOpen && <CatalogSearchModal initialQuery={[form.name, form.winery, (form.name || form.winery) ? form.vintage : undefined].filter(Boolean).join(' ')} onClose={()=>setCatalogOpen(false)} onSelect={useImportedWine} />}
+    {catalogOpen&&<CatalogSearchModal initialQuery={catalogInitial} onClose={()=>setCatalogOpen(false)} onSelect={useImportedWine}/>}  
   </div>;
 }
 
-function CatalogSearchModal({ initialQuery, onClose, onSelect }: { initialQuery:string; onClose:()=>void; onSelect:(p:ImportedWineData)=>void }) {
-  const [query, setQuery] = useState(initialQuery);
-  const [images, setImages] = useState<WineImageResult[]>([]);
-  const [foundWine, setFoundWine] = useState<ImportedWineData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [notConfigured, setNotConfigured] = useState(false);
-
-  async function searchCatalog() {
-    const q = query.trim();
-    if (!q) return;
-    setLoading(true); setError(''); setNotConfigured(false); setImages([]); setFoundWine(null);
-    try {
-      const res = await fetch(`/api/wine-search?q=${encodeURIComponent(q)}`);
-      const data = await res.json();
-      if (!res.ok) {
-        if (data.code === 'SEARCH_NOT_CONFIGURED') setNotConfigured(true);
-        throw new Error(data.error || 'No se pudo buscar');
-      }
-      const foundImages = Array.isArray(data.images) ? data.images : [];
-      setImages(foundImages);
-      setFoundWine(data.wine || null);
-      if (!foundImages.length) setError('He encontrado información del vino, pero ninguna foto clara. Puedes probar otra búsqueda o subir una foto desde el móvil.');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'La búsqueda no está disponible ahora mismo.');
-    } finally { setLoading(false); }
-  }
-
-  function chooseImage(result: WineImageResult) {
-    onSelect({ ...(foundWine || {}), imageUrl: result.imageUrl });
-  }
-
-  function useDataWithoutPhoto() {
-    if (foundWine) onSelect(foundWine);
-  }
-
-  useEffect(() => { if (/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(initialQuery)) searchCatalog(); }, []);
-
-  const summary = foundWine ? [
-    foundWine.vintage ? String(foundWine.vintage) : '',
-    foundWine.aging && foundWine.aging !== 'Sin indicar' ? foundWine.aging : '',
-    foundWine.denomination || '',
-    foundWine.grapes?.length ? foundWine.grapes.join(', ') : '',
-    foundWine.alcohol ? `${foundWine.alcohol}% vol.` : '',
-  ].filter(Boolean) : [];
-
-  return <div className="modal-backdrop catalog-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}>
-    <article className="catalog-modal image-first-modal">
-      <div className="modal-handle"/>
-      <div className="catalog-head"><div><div className="eyebrow">BUSCAR EN INTERNET</div><h2>¿Cuál es tu vino?</h2></div><button className="icon-button" onClick={onClose}><X/></button></div>
-      <p className="catalog-help">Escribe el nombre y la añada. Primero te enseñamos las botellas: toca la correcta y Celler Roig pondrá la foto y los datos que haya podido identificar.</p>
-      <div className="catalog-search"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')searchCatalog()}} placeholder="Ej. Protos Crianza 2021"/><button onClick={searchCatalog} disabled={loading}>{loading?'Buscando…':'Buscar'}</button></div>
-
-      {error && <div className="catalog-error">{error}</div>}
-      {notConfigured && <div className="catalog-setup"><strong>Falta conectar el buscador</strong><span>En Vercel añade <code>SERPER_API_KEY</code> en Environment Variables y vuelve a desplegar.</span></div>}
-
-      {foundWine && summary.length > 0 && <div className="found-data-card">
-        <div><Check size={18}/><strong>Datos encontrados</strong></div>
-        <p>{summary.join(' · ')}</p>
-        <small>Los podrás corregir antes de guardar.</small>
-      </div>}
-
-      {loading && <div className="catalog-loading">
-        <div className="search-loader"/><strong>Buscando botellas…</strong><span>Un momento.</span>
-      </div>}
-
-      {!loading && images.length > 0 && <>
-        <div className="catalog-section-title image-title"><strong>Elige la botella correcta</strong><span>Tócala una vez. Se añadirá directamente a la ficha.</span></div>
-        <div className="catalog-image-grid bottle-search-grid">
-          {images.map(img => <button key={img.id} className="catalog-image-choice bottle-choice" onClick={()=>chooseImage(img)}>
-            <div><img src={img.thumbnailUrl || img.imageUrl} alt={img.title || query}/></div>
-            <strong>{img.title || query}</strong><span>{img.source || 'Internet'}</span>
-            <small>Elegir esta botella</small>
-          </button>)}
-        </div>
-      </>}
-
-      {!loading && foundWine && images.length === 0 && <button className="secondary use-data-only" onClick={useDataWithoutPhoto}><Check size={18}/> Usar los datos sin foto</button>}
-
-      <div className="catalog-tip"><Camera size={18}/><div><strong>¿No sale la botella correcta?</strong><span>Cierra esta ventana y usa “Hacer / elegir foto”. La búsqueda es una ayuda, no hace falta usarla.</span></div></div>
-    </article>
-  </div>;
+function CatalogSearchModal({initialQuery,onClose,onSelect}:{initialQuery:string;onClose:()=>void;onSelect:(p:ImportedWineData)=>void}) {
+  const [query,setQuery]=useState(initialQuery);const [images,setImages]=useState<WineImageResult[]>([]);const [foundWine,setFoundWine]=useState<ImportedWineData|null>(null);const [loading,setLoading]=useState(false);const [error,setError]=useState('');const [notConfigured,setNotConfigured]=useState(false);const [processing,setProcessing]=useState('');
+  async function searchCatalog(){const q=query.trim();if(!q)return;setLoading(true);setError('');setNotConfigured(false);setImages([]);setFoundWine(null);try{const res=await fetch(`/api/wine-search?q=${encodeURIComponent(q)}`);const data=await res.json();if(!res.ok){if(data.code==='SEARCH_NOT_CONFIGURED')setNotConfigured(true);throw new Error(data.error||'No se pudo buscar');}const foundImages=Array.isArray(data.images)?data.images:[];setImages(foundImages);setFoundWine(data.wine||null);if(!foundImages.length)setError('He encontrado información, pero no una foto clara. Prueba con el nombre completo y la añada.');}catch(e){setError(e instanceof Error?e.message:'La búsqueda no está disponible ahora mismo.');}finally{setLoading(false);}}
+  async function chooseImage(result:WineImageResult){setProcessing(result.id);let imageUrl=result.imageUrl;try{imageUrl=await prepareBottleImageFromUrl(result.imageUrl);}catch{}onSelect({...(foundWine||{}),imageUrl});setProcessing('');}
+  function useDataWithoutPhoto(){if(foundWine)onSelect(foundWine);}
+  useEffect(()=>{if(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]/.test(initialQuery))void searchCatalog();},[]);
+  const summary=foundWine?[foundWine.vintage?String(foundWine.vintage):'',foundWine.aging&&foundWine.aging!=='Sin indicar'?foundWine.aging:'',foundWine.denomination||'',foundWine.country||'',foundWine.grapes?.length?foundWine.grapes.join(', '):'',foundWine.alcohol?`${foundWine.alcohol}% vol.`:''].filter(Boolean):[];
+  return <div className="modal-backdrop catalog-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="catalog-modal image-first-modal"><div className="modal-handle"/><div className="catalog-head"><div><div className="eyebrow">BUSCAR EN INTERNET</div><h2>¿Cuál es tu vino?</h2></div><button className="icon-button" onClick={onClose}><X/></button></div><p className="catalog-help">Busca el nombre y toca la botella correcta. La foto se prepara para la estantería y los datos encontrados se copian a la ficha.</p><div className="catalog-search"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void searchCatalog()}} placeholder="Ej. Château Margaux 2019"/><button onClick={()=>void searchCatalog()} disabled={loading}>{loading?'Buscando…':'Buscar'}</button></div>{error&&<div className="catalog-error">{error}</div>}{notConfigured&&<div className="catalog-setup"><strong>Falta conectar el buscador</strong><span>En Vercel añade <code>SERPER_API_KEY</code> en Environment Variables.</span></div>}{foundWine&&summary.length>0&&<div className="found-data-card"><div><Check size={18}/><strong>Datos encontrados</strong></div><p>{summary.join(' · ')}</p><small>Los podrás corregir antes de guardar.</small></div>}{loading&&<div className="catalog-loading"><div className="search-loader"/><strong>Buscando botellas…</strong><span>Un momento.</span></div>}{!loading&&images.length>0&&<><div className="catalog-section-title image-title"><strong>Elige la botella correcta</strong><span>Intentaremos quitar el fondo claro automáticamente.</span></div><div className="catalog-image-grid bottle-search-grid">{images.map(img=><button key={img.id} disabled={!!processing} className="catalog-image-choice bottle-choice" onClick={()=>void chooseImage(img)}><div><img src={img.thumbnailUrl||img.imageUrl} alt={img.title||query}/></div><strong>{img.title||query}</strong><span>{img.source||'Internet'}</span><small>{processing===img.id?'Preparando botella…':'Elegir esta botella'}</small></button>)}</div></>}{!loading&&foundWine&&images.length===0&&<button className="secondary use-data-only" onClick={useDataWithoutPhoto}><Check size={18}/> Usar los datos sin foto</button>}<div className="catalog-tip"><Camera size={18}/><div><strong>¿No sale la correcta?</strong><span>Prueba con bodega + nombre + añada. También puedes cerrar y hacer una foto.</span></div></div></article></div>;
 }
-function Field({ label, children }: { label:string; children:React.ReactNode }) { return <label className="field"><span>{label}</span>{children}</label>; }
 
-function WineModal({ wine, onClose, onPatch, onEdit, onDelete, onMoveToCellar }: { wine:Wine; onClose:()=>void; onPatch:(id:string,p:Partial<Wine>)=>void; onEdit:(w:Wine)=>void; onDelete:(id:string)=>void; onMoveToCellar:(w:Wine)=>void }) {
-  return <div className="modal-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="wine-modal">
-    <div className="modal-handle"/><div className="modal-top"><button className="icon-button" onClick={onClose}><X/></button><button className="icon-button" onClick={()=>onEdit(wine)}><Pencil/></button></div>
-    <div className="modal-hero"><div className="modal-bottle"><BottleVisual wine={wine}/></div><div className="modal-title"><span>{wine.protection !== 'Sin indicación' ? `${wine.protection} · `:''}{wine.denomination || wine.type}</span><h2>{wine.name}</h2><p>{wine.winery}{wine.vintage?` · ${wine.vintage}`:''}</p><button className={wine.favorite?'favorite-button active':'favorite-button'} onClick={()=>onPatch(wine.id,{favorite:!wine.favorite})}><Heart size={19} fill={wine.favorite?'currentColor':'none'}/>{wine.favorite?'Favorito':'Añadir a favoritos'}</button></div></div>
-    {wine.status==='wishlist' ? <button className="primary modal-main-action" onClick={()=>onMoveToCellar(wine)}><ShoppingBag size={20}/> Lo he comprado</button> : <>
-      <div className="score-stock"><div><span>Tu nota</span><strong>{wine.score ?? '—'}<small>/10</small></strong></div><div><span>En casa</span><strong>{wine.quantity}<small>{wine.quantity===1?' botella':' botellas'}</small></strong></div></div>
-      {wine.status==='cellar' && <div className="modal-actions"><div className="qty-control"><button onClick={()=>onPatch(wine.id,{quantity:Math.max(0,wine.quantity-1)})}><Minus/></button><strong>{wine.quantity}</strong><button onClick={()=>onPatch(wine.id,{quantity:wine.quantity+1})}><Plus/></button></div><button className="primary drink-button" onClick={()=>onPatch(wine.id,{quantity:Math.max(0,wine.quantity-1),status:wine.quantity<=1?'tried':'cellar'})}><GlassWater size={19}/> He bebido una</button></div>}
-    </>}
-    <div className="details-card"><Info label="Tipo" value={wine.type}/><Info label="Uva" value={wine.grapes.join(', ')||'—'}/><Info label="Envejecimiento" value={wine.aging}/><Info label="Protección" value={wine.protection}/><Info label="DOP / IGP" value={wine.denomination||'—'}/><Info label="Región" value={wine.region||'—'}/>{wine.price!=null&&<Info label="Precio" value={`${wine.price.toFixed(2)} €`}/>}</div>
-    {(wine.notes || wine.rebuy) && <div className="notes-card">{wine.notes&&<><span>Tu opinión</span><p>{wine.notes}</p></>}{wine.rebuy&&<div className="rebuy"><Check size={17}/> Lo compraría otra vez: <b>{wine.rebuy}</b></div>}</div>}
+function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="field"><span>{label}</span>{children}</label>;}
+
+function WineModal({wine,onClose,onPatch,onEdit,onDelete,onMoveToCellar,onConsume}:{wine:Wine;onClose:()=>void;onPatch:(id:string,p:Partial<Wine>)=>void;onEdit:(w:Wine)=>void;onDelete:(id:string)=>void;onMoveToCellar:(w:Wine)=>void;onConsume:(w:Wine)=>void;}) {
+  const [showTasting,setShowTasting]=useState(false); const [tasteScore,setTasteScore]=useState<string>(wine.score!=null?String(wine.score):''); const [tasteNotes,setTasteNotes]=useState('');
+  function addTasting(){const tasting:Tasting={id:crypto.randomUUID(),date:new Date().toISOString(),score:tasteScore?Math.min(10,Math.max(0,Number(tasteScore))):undefined,notes:tasteNotes.trim()};const list=[...(wine.tastings||[]),tasting];onPatch(wine.id,{tried:true,wishlist:false,status:wine.quantity>0?'cellar':'tried',score:tasting.score??wine.score,notes:tasting.notes||wine.notes,tastings:list,lastTastedAt:tasting.date});setShowTasting(false);setTasteNotes('');}
+  return <div className="modal-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="wine-modal"><div className="modal-handle"/><div className="modal-top"><button className="icon-button" onClick={onClose}><X/></button><button className="icon-button" onClick={()=>onEdit(wine)}><Pencil/></button></div><div className="modal-hero"><div className="modal-bottle"><BottleVisual wine={wine}/></div><div className="modal-title"><span>{wine.denomination||wine.country||wine.type}</span><h2>{wine.name}</h2><p>{wine.winery}{wine.vintage?` · ${wine.vintage}`:''}</p><div className="modal-badges">{wine.gifted&&<span><Gift size={14}/> Regalo</span>}{wine.tried&&<span><Check size={14}/> Probado</span>}</div><div className="quick-flags"><button className={wine.favorite?'favorite-button active':'favorite-button'} onClick={()=>onPatch(wine.id,{favorite:!wine.favorite})}><Heart size={19} fill={wine.favorite?'currentColor':'none'}/>{wine.favorite?'Favorito':'Favorito'}</button><button className={wine.openSoon?'favorite-button active':'favorite-button'} onClick={()=>onPatch(wine.id,{openSoon:!wine.openSoon})}><Clock3 size={18}/>{wine.openSoon?'Abrir pronto':'Abrir pronto'}</button></div></div></div>
+    {wine.wishlist?<div className="wishlist-actions-modal"><button className="primary modal-main-action" onClick={()=>onMoveToCellar(wine)}><ShoppingBag size={20}/> Ya lo tengo</button><button className="secondary modal-main-action" onClick={()=>onPatch(wine.id,{wishlist:false,tried:true,status:'tried',quantity:0,lastTastedAt:new Date().toISOString()})}><CheckCircle2 size={20}/> Ya lo he probado</button></div>:<><div className="score-stock"><div><span>Tu nota</span><strong>{wine.score??'—'}<small>/10</small></strong></div><div><span>En casa</span><strong>{wine.quantity}<small>{wine.quantity===1?' botella':' botellas'}</small></strong></div></div>{wine.quantity>0&&<div className="modal-actions"><div className="qty-control"><button onClick={()=>onPatch(wine.id,{quantity:Math.max(0,wine.quantity-1),status:wine.quantity<=1?'tried':'cellar',tried:wine.quantity<=1?true:wine.tried})}><Minus/></button><strong>{wine.quantity}</strong><button onClick={()=>onPatch(wine.id,{quantity:wine.quantity+1,status:'cellar',wishlist:false})}><Plus/></button></div><button className="primary drink-button" onClick={()=>onConsume(wine)}><GlassWater size={19}/> He bebido una</button></div>}<button className="secondary tasting-action" onClick={()=>setShowTasting(!showTasting)}><Star size={18}/>{wine.tried?'Registrar otra cata':'Marcar como probado'}</button>{showTasting&&<div className="tasting-editor"><div className="two-cols"><Field label="Nota (0–10)"><input type="number" min="0" max="10" step="0.1" value={tasteScore} onChange={e=>setTasteScore(e.target.value)}/></Field><Field label="Fecha"><input type="text" value={new Date().toLocaleDateString('es-ES')} readOnly/></Field></div><Field label="Comentario"><textarea rows={3} value={tasteNotes} onChange={e=>setTasteNotes(e.target.value)} placeholder="Qué te ha parecido…"/></Field><button className="primary" onClick={addTasting}>Guardar cata</button></div>}</>}
+    <div className="details-card"><Info label="Tipo" value={wine.type}/><Info label="Uva" value={wine.grapes.join(', ')||'—'}/><Info label="Envejecimiento" value={displayAging(wine)}/>{wine.classification&&<Info label="Clasificación" value={wine.classification}/>}<Info label="Denominación / Appellation" value={wine.denomination||'—'}/>{wine.region&&<Info label="Región" value={wine.region}/>} {wine.country&&<Info label="País" value={wine.country}/>} {wine.location&&<Info label="Dónde está" value={wine.location}/>} {wine.price!=null&&<Info label="Precio" value={`${wine.price.toFixed(2)} €`}/>} {wine.shop&&<Info label="Comprado / visto en" value={wine.shop}/>}</div>
+    {wine.gifted&&<div className="gift-card"><Gift size={19}/><div><strong>Esta botella fue un regalo</strong><span>{wine.giftedBy?`De ${wine.giftedBy}`:'Sin indicar quién'}{wine.giftDate?` · ${formatDate(wine.giftDate)}`:''}</span></div></div>}
+    {(wine.notes||wine.rebuy)&&<div className="notes-card">{wine.notes&&<><span>Tu opinión</span><p>{wine.notes}</p></>}{wine.rebuy&&<div className="rebuy"><Check size={17}/> Lo compraría otra vez: <b>{wine.rebuy}</b></div>}</div>}
+    {wine.tastings?.length>0&&<div className="history-card"><span>Historial de catas</span>{[...wine.tastings].reverse().slice(0,4).map(t=><div key={t.id} className="history-row"><div><Clock3 size={15}/><strong>{formatDate(t.date)}</strong></div>{t.score!=null&&<b>{t.score}/10</b>}{t.notes&&<p>{t.notes}</p>}</div>)}</div>}
     <button className="danger-link" onClick={()=>{if(confirm('¿Eliminar este vino?'))onDelete(wine.id)}}><Trash2 size={17}/> Eliminar vino</button>
   </article></div>;
 }
-function Info({label,value}:{label:string;value:string}) {return <div className="info-row"><span>{label}</span><strong>{value}</strong></div>}
 
-function SettingsScreen({ wineCount, cloudStatus, onReset }: { wineCount:number; cloudStatus:CloudStatus; onReset:()=>void }) {
-  const cloudCopy = cloudStatus === 'synced' ? 'Guardado en la nube' : cloudStatus === 'saving' ? 'Guardando…' : cloudStatus === 'connecting' ? 'Conectando…' : cloudStatus === 'local' ? 'Solo en este dispositivo' : 'Sin conexión con la nube';
-  return <div className="page settings-page"><Header eyebrow="CELLER ROIG" title="Ajustes"/><div className="settings-card"><div className="settings-line"><div><strong>Pedro</strong><span>{wineCount} vinos guardados</span></div><WineIcon/></div><div className="settings-line"><div><strong>Copia de seguridad</strong><span>{cloudCopy}</span></div><Archive/></div></div><div className="settings-card"><button className="settings-line"><div><strong>Exportar colección</strong><span>Próxima fase: CSV / PDF</span></div><ExternalLink/></button><button className="settings-line" onClick={onReset}><div><strong>Restaurar ejemplo</strong><span>Vuelve a cargar los vinos de muestra</span></div><RotateCcw/></button></div><p className="settings-note">Celler Roig mantiene una copia local para que la app siga siendo rápida y, cuando Neon está conectado, guarda también la colección en la nube.</p></div>;
+function Info({label,value}:{label:string;value:string}){return <div className="info-row"><span>{label}</span><strong>{value}</strong></div>;}
+function formatDate(value:string){try{return new Intl.DateTimeFormat('es-ES',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(value));}catch{return value;}}
+
+function SettingsScreen({wines,cloudStatus,onBack,onReset}:{wines:Wine[];cloudStatus:CloudStatus;onBack:()=>void;onReset:()=>void}) {
+  const cloudCopy=cloudStatus==='synced'?'Guardado en la nube':cloudStatus==='saving'?'Guardando…':cloudStatus==='connecting'?'Conectando…':cloudStatus==='local'?'Solo en este dispositivo':'Sin conexión con la nube';
+  function exportCsv(){const esc=(v:unknown)=>`"${String(v??'').replace(/"/g,'""')}"`;const head=['Nombre','Bodega','Añada','Tipo','Uvas','Envejecimiento','Clasificación','Denominación/Appellation','Región','País','Botellas','Probado','Por probar','Regalo','Abrir pronto','Regalado por','Ubicación','Precio','Dónde lo compré','Nota','Volvería a comprar','Notas'];const rows=wines.map(w=>[w.name,w.winery,w.vintage||'',w.type,w.grapes.join(' / '),displayAging(w),w.classification,w.denomination,w.region,w.country,w.quantity,w.tried?'Sí':'No',w.wishlist?'Sí':'No',w.gifted?'Sí':'No',w.openSoon?'Sí':'No',w.giftedBy,w.location,w.price??'',w.shop,w.score??'',w.rebuy,w.notes]);const csv='\uFEFF'+[head,...rows].map(r=>r.map(esc).join(';')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-vinos.csv';a.click();URL.revokeObjectURL(url);}
+  return <div className="page settings-page"><Header eyebrow="CELLER ROIG" title="Ajustes" right={<button className="icon-button" onClick={onBack}><X/></button>}/><div className="settings-card"><div className="settings-line"><div><strong>Pedro</strong><span>{wines.length} vinos guardados</span></div><WineIcon/></div><div className="settings-line"><div><strong>Copia de seguridad</strong><span>{cloudCopy}</span></div><Archive/></div></div><div className="settings-card"><button className="settings-line" onClick={exportCsv}><div><strong>Exportar colección</strong><span>Descargar una copia en CSV</span></div><ExternalLink/></button><button className="settings-line" onClick={onReset}><div><strong>Restaurar ejemplo</strong><span>Vuelve a cargar los vinos de muestra</span></div><RotateCcw/></button></div><p className="settings-note">Celler Roig guarda una copia local para que sea rápida y, cuando Neon está conectado, sincroniza la colección con la nube.</p></div>;
 }
 
-function BottomNav({ tab, setTab, onAdd }: { tab:Tab; setTab:(t:Tab)=>void; onAdd:()=>void }) {
-  return <nav className="bottom-nav"><NavButton active={tab==='home'} icon={<Home/>} label="Inicio" onClick={()=>setTab('home')}/><NavButton active={tab==='cellar'} icon={<WineIcon/>} label="Vinoteca" onClick={()=>setTab('cellar')}/><button className="nav-add" onClick={onAdd}><Plus/><span>Añadir</span></button><NavButton active={tab==='wishlist'} icon={<Heart/>} label="Por probar" onClick={()=>setTab('wishlist')}/><NavButton active={tab==='settings'} icon={<Settings/>} label="Ajustes" onClick={()=>setTab('settings')}/></nav>;
+function BottomNav({tab,setTab,onAdd}:{tab:Tab;setTab:(t:Tab)=>void;onAdd:()=>void}) {
+  return <nav className="bottom-nav"><NavButton active={tab==='home'} icon={<Home/>} label="Inicio" onClick={()=>setTab('home')}/><NavButton active={tab==='cellar'} icon={<WineIcon/>} label="Vinoteca" onClick={()=>setTab('cellar')}/><button className="nav-add" onClick={onAdd}><Plus/><span>Añadir</span></button><NavButton active={tab==='tried'} icon={<CheckCircle2/>} label="Probados" onClick={()=>setTab('tried')}/><NavButton active={tab==='wishlist'} icon={<Heart/>} label="Por probar" onClick={()=>setTab('wishlist')}/></nav>;
 }
-function NavButton({active,icon,label,onClick}:{active:boolean;icon:React.ReactNode;label:string;onClick:()=>void}) {return <button className={active?'nav-button active':'nav-button'} onClick={onClick}>{icon}<span>{label}</span></button>}
-
-function EmptyState({title,text,action,onAction}:{title:string;text:string;action?:string;onAction?:()=>void}) {return <div className="empty-state"><div className="empty-icon"><WineIcon/></div><h2>{title}</h2><p>{text}</p>{action&&<button className="primary" onClick={onAction}>{action}</button>}</div>}
+function NavButton({active,icon,label,onClick}:{active:boolean;icon:React.ReactNode;label:string;onClick:()=>void}){return <button className={active?'nav-button active':'nav-button'} onClick={onClick}>{icon}<span>{label}</span></button>;}
+function EmptyState({title,text,action,onAction}:{title:string;text:string;action?:string;onAction?:()=>void}){return <div className="empty-state"><div className="empty-icon"><WineIcon/></div><h2>{title}</h2><p>{text}</p>{action&&<button className="primary" onClick={onAction}>{action}</button>}</div>;}
 
 export default App;
