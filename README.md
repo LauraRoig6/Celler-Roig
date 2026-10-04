@@ -1,4 +1,4 @@
-# Celler Roig · V10
+# Celler Roig V10.1 · V10
 
 App móvil/PWA para la vinoteca de Pedro.
 
@@ -30,3 +30,7 @@ Sube el contenido de esta carpeta a la raíz del repositorio conectado a Vercel.
 
 ## Foto inteligente (V10)
 La foto móvil usa OCR real con Tesseract.js cuando el navegador no dispone de TextDetector, y segmentación de IA con @imgly/background-removal para separar la botella de fondos no blancos. El primer uso puede tardar algo más porque el navegador descarga y cachea los modelos.
+
+
+## V10.1
+Corrige el conflicto de dependencias de Vercel entre `@imgly/background-removal` y `onnxruntime-web` usando la versión estable `1.21.0`.
