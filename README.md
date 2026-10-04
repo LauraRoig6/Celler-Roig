@@ -1,4 +1,4 @@
-# Celler Roig — V4
+# Celler Roig — V5
 
 Aplicación móvil/PWA para la vinoteca personal de Pedro Roig.
 
@@ -11,7 +11,7 @@ Aplicación móvil/PWA para la vinoteca personal de Pedro Roig.
 
 ## Activar búsqueda fiable de vinos
 
-La V4 ya no usa Bing RSS ni Open Food Facts como buscador general. Usa **Serper (Google Search API)** desde una función del servidor para evitar resultados irrelevantes.
+La V5 ya no usa Bing RSS ni Open Food Facts como buscador general. Usa **Serper (Google Search API)** desde una función del servidor para evitar resultados irrelevantes.
 
 1. Crea una cuenta en https://serper.dev/ y copia tu API key.
 2. En Vercel: **Project → Settings → Environment Variables**.
@@ -28,3 +28,7 @@ Cada búsqueda consulta también Google Images mediante Serper. Celler Roig mues
 ## Datos
 
 Esta versión sigue guardando la colección en `localStorage` del dispositivo. Para uso definitivo conviene conectar Supabase en la siguiente fase.
+
+
+## V5: búsqueda visual
+La búsqueda de vinos ahora es image-first: al buscar se muestran primero fotos de botellas. Al tocar una imagen se aplica directamente la foto y los metadatos inferidos desde resultados de búsqueda, sin depender de que una tienda permita leer su página.

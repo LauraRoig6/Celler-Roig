@@ -385,9 +385,9 @@ function AddScreen({ form, setForm, save, editing, moreInfo, setMoreInfo, onCanc
       <BottleVisual wine={{...form,id:'preview',createdAt:'',manualOrder:0}} />
       <div className="image-actions">
         <label className="secondary"><Camera size={18}/> Hacer / elegir foto<input type="file" accept="image/*" capture="environment" onChange={e=>pickImage(e.target.files?.[0])}/></label>
-        <button type="button" className="ghost-button" onClick={()=>setCatalogOpen(true)}><Search size={18}/> Buscar vino en Internet</button>
+        <button type="button" className="ghost-button" onClick={()=>setCatalogOpen(true)}><Search size={18}/> Buscar botella y datos</button>
       </div>
-      <p>Busca el vino o pega la dirección de su ficha web. Celler Roig intentará traer la foto y rellenar automáticamente la ficha.</p>
+      <p>Busca el vino y elige su botella. Celler Roig intentará completar automáticamente la información que encuentre.</p>
     </div>
 
     <div className="form-card">
@@ -417,18 +417,16 @@ function AddScreen({ form, setForm, save, editing, moreInfo, setMoreInfo, onCanc
 
 function CatalogSearchModal({ initialQuery, onClose, onSelect }: { initialQuery:string; onClose:()=>void; onSelect:(p:ImportedWineData)=>void }) {
   const [query, setQuery] = useState(initialQuery);
-  const [results, setResults] = useState<WineSearchResult[]>([]);
   const [images, setImages] = useState<WineImageResult[]>([]);
+  const [foundWine, setFoundWine] = useState<ImportedWineData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [importingId, setImportingId] = useState('');
   const [error, setError] = useState('');
   const [notConfigured, setNotConfigured] = useState(false);
-  const [pageUrl, setPageUrl] = useState('');
 
   async function searchCatalog() {
     const q = query.trim();
     if (!q) return;
-    setLoading(true); setError(''); setNotConfigured(false); setResults([]); setImages([]);
+    setLoading(true); setError(''); setNotConfigured(false); setImages([]); setFoundWine(null);
     try {
       const res = await fetch(`/api/wine-search?q=${encodeURIComponent(q)}`);
       const data = await res.json();
@@ -436,84 +434,70 @@ function CatalogSearchModal({ initialQuery, onClose, onSelect }: { initialQuery:
         if (data.code === 'SEARCH_NOT_CONFIGURED') setNotConfigured(true);
         throw new Error(data.error || 'No se pudo buscar');
       }
-      const found = Array.isArray(data.results) ? data.results : [];
       const foundImages = Array.isArray(data.images) ? data.images : [];
-      setResults(found);
       setImages(foundImages);
-      if (!found.length && !foundImages.length) setError('No he encontrado coincidencias fiables. Prueba con bodega + nombre + añada.');
+      setFoundWine(data.wine || null);
+      if (!foundImages.length) setError('He encontrado información del vino, pero ninguna foto clara. Puedes probar otra búsqueda o subir una foto desde el móvil.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'La búsqueda no está disponible ahora mismo.');
     } finally { setLoading(false); }
   }
 
-  async function importUrl(url: string, resultId = 'url', forcedImage = '') {
-    if (!/^https?:\/\//i.test(url.trim())) {
-      if (forcedImage) onSelect({ imageUrl: forcedImage });
-      return;
-    }
-    setImportingId(resultId); setError('');
-    try {
-      const res = await fetch(`/api/wine-import?url=${encodeURIComponent(url.trim())}&hint=${encodeURIComponent(query.trim())}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'No se pudo importar la ficha');
-      if (!data.wine) throw new Error('La página no contenía datos utilizables.');
-      onSelect({ ...(data.wine as ImportedWineData), imageUrl: forcedImage || data.wine.imageUrl });
-    } catch (e) {
-      if (forcedImage) {
-        onSelect({ imageUrl: forcedImage });
-        return;
-      }
-      setError(e instanceof Error ? e.message : 'No he podido leer esa ficha.');
-    } finally { setImportingId(''); }
+  function chooseImage(result: WineImageResult) {
+    onSelect({ ...(foundWine || {}), imageUrl: result.imageUrl });
   }
 
-  async function useResult(result: WineSearchResult) {
-    await importUrl(result.url, result.id);
-  }
-
-  async function useImage(result: WineImageResult) {
-    if (result.pageUrl) await importUrl(result.pageUrl, result.id, result.imageUrl);
-    else onSelect({ imageUrl: result.imageUrl });
+  function useDataWithoutPhoto() {
+    if (foundWine) onSelect(foundWine);
   }
 
   useEffect(() => { if (initialQuery.trim()) searchCatalog(); }, []);
 
+  const summary = foundWine ? [
+    foundWine.vintage ? String(foundWine.vintage) : '',
+    foundWine.aging && foundWine.aging !== 'Sin indicar' ? foundWine.aging : '',
+    foundWine.denomination || '',
+    foundWine.grapes?.length ? foundWine.grapes.join(', ') : '',
+    foundWine.alcohol ? `${foundWine.alcohol}% vol.` : '',
+  ].filter(Boolean) : [];
+
   return <div className="modal-backdrop catalog-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}>
-    <article className="catalog-modal">
+    <article className="catalog-modal image-first-modal">
       <div className="modal-handle"/>
-      <div className="catalog-head"><div><div className="eyebrow">BUSCAR EN INTERNET</div><h2>Encontrar vino</h2></div><button className="icon-button" onClick={onClose}><X/></button></div>
-      <p className="catalog-help">Busca el vino como lo escribirías en Google. Mostramos resultados relacionados con vino y fotos de botellas; no usamos ya el catálogo genérico que daba resultados raros.</p>
-      <div className="catalog-search"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')searchCatalog()}} placeholder="Ej. Protos Reserva 2021"/><button onClick={searchCatalog} disabled={loading}>{loading?'Buscando…':'Buscar'}</button></div>
+      <div className="catalog-head"><div><div className="eyebrow">BUSCAR EN INTERNET</div><h2>¿Cuál es tu vino?</h2></div><button className="icon-button" onClick={onClose}><X/></button></div>
+      <p className="catalog-help">Escribe el nombre y la añada. Primero te enseñamos las botellas: toca la correcta y Celler Roig pondrá la foto y los datos que haya podido identificar.</p>
+      <div className="catalog-search"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')searchCatalog()}} placeholder="Ej. Protos Crianza 2021"/><button onClick={searchCatalog} disabled={loading}>{loading?'Buscando…':'Buscar'}</button></div>
+
       {error && <div className="catalog-error">{error}</div>}
-      {notConfigured && <div className="catalog-setup"><strong>Falta conectar el buscador</strong><span>En Vercel añade una variable de entorno llamada <code>SERPER_API_KEY</code>. Después vuelve a desplegar la app. Así la búsqueda usa resultados reales de Google y deja de devolver páginas como Google Earth.</span></div>}
+      {notConfigured && <div className="catalog-setup"><strong>Falta conectar el buscador</strong><span>En Vercel añade <code>SERPER_API_KEY</code> en Environment Variables y vuelve a desplegar.</span></div>}
 
-      {results.length > 0 && <>
-        <div className="catalog-section-title"><strong>Fichas encontradas</strong><span>Elige la que corresponda al vino.</span></div>
-        <div className="catalog-results">
-          {results.map((r) => <div className="catalog-card web-result" key={r.id}>
-            <div className="catalog-photo web-source"><WineIcon size={32}/></div>
-            <div className="catalog-copy"><strong>{r.title || 'Resultado sin título'}</strong><span>{r.source || 'Internet'}</span>{r.snippet&&<small className="catalog-snippet">{r.snippet}</small>}<button className="primary catalog-use" disabled={!!importingId} onClick={()=>useResult(r)}>{importingId===r.id?'Leyendo ficha…':'Usar esta ficha'}</button></div>
-          </div>)}
-        </div>
-      </>}
+      {foundWine && summary.length > 0 && <div className="found-data-card">
+        <div><Check size={18}/><strong>Datos encontrados</strong></div>
+        <p>{summary.join(' · ')}</p>
+        <small>Los podrás corregir antes de guardar.</small>
+      </div>}
 
-      {images.length > 0 && <>
-        <div className="catalog-section-title"><strong>Fotos encontradas</strong><span>Toca una botella y se pondrá directamente en Celler Roig.</span></div>
-        <div className="catalog-image-grid">
-          {images.map(img => <button key={img.id} className="catalog-image-choice" disabled={!!importingId} onClick={()=>useImage(img)}>
+      {loading && <div className="catalog-loading">
+        <div className="search-loader"/><strong>Buscando botellas…</strong><span>Un momento.</span>
+      </div>}
+
+      {!loading && images.length > 0 && <>
+        <div className="catalog-section-title image-title"><strong>Elige la botella correcta</strong><span>Tócala una vez. Se añadirá directamente a la ficha.</span></div>
+        <div className="catalog-image-grid bottle-search-grid">
+          {images.map(img => <button key={img.id} className="catalog-image-choice bottle-choice" onClick={()=>chooseImage(img)}>
             <div><img src={img.thumbnailUrl || img.imageUrl} alt={img.title || query}/></div>
-            <strong>{img.title || 'Botella'}</strong><span>{img.source || 'Internet'}</span>
-            <small>{importingId===img.id?'Importando…':'Usar foto y datos'}</small>
+            <strong>{img.title || query}</strong><span>{img.source || 'Internet'}</span>
+            <small>Elegir esta botella</small>
           </button>)}
         </div>
       </>}
 
-      <div className="image-url-box url-import-box"><strong>¿Tienes la página exacta del vino?</strong><span>Pega el enlace de la bodega o tienda y Celler Roig intentará leer su ficha.</span><div><input value={pageUrl} onChange={e=>setPageUrl(e.target.value)} inputMode="url" placeholder="https://bodega.com/vino…"/><button className="secondary" disabled={!/^https?:\/\//i.test(pageUrl.trim()) || !!importingId} onClick={()=>importUrl(pageUrl,'url')}>{importingId==='url'?'Leyendo…':'Importar ficha'}</button></div></div>
-      <p className="catalog-source">La información automática depende de lo que publique cada bodega o tienda. Antes de guardar puedes corregir cualquier campo.</p>
+      {!loading && foundWine && images.length === 0 && <button className="secondary use-data-only" onClick={useDataWithoutPhoto}><Check size={18}/> Usar los datos sin foto</button>}
+
+      <div className="catalog-tip"><Camera size={18}/><div><strong>¿No sale la botella correcta?</strong><span>Cierra esta ventana y usa “Hacer / elegir foto”. La búsqueda es una ayuda, no hace falta usarla.</span></div></div>
     </article>
   </div>;
 }
-
 function Field({ label, children }: { label:string; children:React.ReactNode }) { return <label className="field"><span>{label}</span>{children}</label>; }
 
 function WineModal({ wine, onClose, onPatch, onEdit, onDelete, onMoveToCellar }: { wine:Wine; onClose:()=>void; onPatch:(id:string,p:Partial<Wine>)=>void; onEdit:(w:Wine)=>void; onDelete:(id:string)=>void; onMoveToCellar:(w:Wine)=>void }) {
