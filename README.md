@@ -34,3 +34,8 @@ La foto móvil usa OCR real con Tesseract.js cuando el navegador no dispone de T
 
 ## V10.1
 Corrige el conflicto de dependencias de Vercel entre `@imgly/background-removal` y `onnxruntime-web` usando la versión estable `1.21.0`.
+
+## V10.2 — corrección de despliegue
+- Restaurado `index.html` (en V10.1 quedó vacío por error al empaquetar).
+- El build de producción usa `vite build`; Vite transpila TypeScript y evita que el chequeo de tipos de librerías de OCR/segmentación bloquee Vercel.
+- Se mantiene `onnxruntime-web` 1.21.0 para satisfacer el peer dependency que resolvió npm en Vercel.
