@@ -10,7 +10,6 @@ export function groupLabel(wine: Wine, mode: SortMode) {
     case 'grape': return wine.grapes[0] || 'Sin uva';
     case 'vintage': return wine.vintage ? String(wine.vintage) : 'Sin añada';
     case 'aging': return wine.aging;
-    case 'protection': return wine.protection === 'Sin indicación' ? 'Sin DOP / IGP' : wine.protection;
     case 'denomination': return wine.denomination ? `${wine.protection !== 'Sin indicación' ? wine.protection + ' · ' : ''}${wine.denomination}` : 'Sin denominación';
     case 'score': return wine.score ? `${Math.floor(wine.score)}–${Math.floor(wine.score) + 0.9}` : 'Sin nota';
     case 'name': return wine.name.charAt(0).toUpperCase();
@@ -26,7 +25,6 @@ export function sortWines(wines: Wine[], mode: SortMode) {
     case 'grape': return list.sort((a, b) => (a.grapes[0] || '').localeCompare(b.grapes[0] || '') || a.name.localeCompare(b.name));
     case 'vintage': return list.sort((a, b) => (b.vintage || 0) - (a.vintage || 0));
     case 'aging': return list.sort((a, b) => (agingRank[a.aging] || 99) - (agingRank[b.aging] || 99));
-    case 'protection': return list.sort((a, b) => a.protection.localeCompare(b.protection) || a.denomination.localeCompare(b.denomination));
     case 'denomination': return list.sort((a, b) => a.denomination.localeCompare(b.denomination));
     case 'score': return list.sort((a, b) => (b.score || 0) - (a.score || 0));
     case 'name': return list.sort((a, b) => a.name.localeCompare(b.name));

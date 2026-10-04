@@ -30,4 +30,4 @@ export type Wine = {
   manualOrder: number;
 };
 
-export type SortMode = 'manual' | 'type' | 'grape' | 'vintage' | 'aging' | 'protection' | 'denomination' | 'score' | 'name';
+export type SortMode = 'manual' | 'type' | 'grape' | 'vintage' | 'aging' | 'denomination' | 'score' | 'name';

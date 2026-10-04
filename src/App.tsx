@@ -18,6 +18,7 @@ import { fileToDataUrl, groupLabel, sortWines } from './utils';
 
 type Tab = 'home' | 'cellar' | 'add' | 'wishlist' | 'settings';
 type ViewMode = 'shelf' | 'list';
+type CloudStatus = 'connecting' | 'synced' | 'saving' | 'local' | 'error';
 
 const STORAGE_KEY = 'celler-roig:wines:v1';
 const typeOptions: WineType[] = ['Tinto','Blanco','Rosado','Espumoso','Generoso','Otro'];
@@ -29,14 +30,13 @@ const sortOptions: {value: SortMode; label: string}[] = [
   { value: 'grape', label: 'Tipo de uva' },
   { value: 'vintage', label: 'Añada' },
   { value: 'aging', label: 'Envejecimiento' },
-  { value: 'protection', label: 'DOP / IGP' },
   { value: 'denomination', label: 'Denominación' },
   { value: 'score', label: 'Puntuación' },
   { value: 'name', label: 'Nombre' },
 ];
 
 const emptyForm = (): Omit<Wine, 'id' | 'createdAt' | 'manualOrder'> => ({
-  name: '', winery: '', vintage: new Date().getFullYear(), type: 'Tinto', grapes: [], aging: 'Sin indicar',
+  name: '', winery: '', vintage: undefined, type: 'Tinto', grapes: [], aging: 'Sin indicar',
   protection: 'DOP', denomination: '', region: '', country: 'España', alcohol: undefined, price: undefined,
   shop: '', quantity: 1, status: 'cellar', favorite: false, score: undefined, notes: '', rebuy: '', imageUrl: '',
 });
@@ -53,13 +53,86 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('shelf');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'Todos' | WineType>('Todos');
-  const [protectionFilter, setProtectionFilter] = useState<'Todas' | Protection>('Todas');
   const [sortOpen, setSortOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
   const [moreInfo, setMoreInfo] = useState(false);
   const [editingShelf, setEditingShelf] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState<CloudStatus>('connecting');
 
   useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(wines)), [wines]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCloud() {
+      try {
+        const res = await fetch('/api/wines');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (!cancelled) setCloudStatus(data.code === 'DATABASE_NOT_CONFIGURED' ? 'local' : 'error');
+          return;
+        }
+        const remoteWines: Wine[] = Array.isArray(data.wines) ? data.wines : [];
+        if (cancelled) return;
+        if (remoteWines.length) {
+          setWines(remoteWines);
+        } else if (wines.length) {
+          await fetch('/api/wines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wines }) });
+        }
+        if (!cancelled) setCloudStatus('synced');
+      } catch {
+        if (!cancelled) setCloudStatus('error');
+      }
+    }
+    loadCloud();
+    return () => { cancelled = true; };
+    // We intentionally use the initial local collection only for first-time migration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function persistWine(wine: Wine) {
+    if (cloudStatus === 'local') return;
+    setCloudStatus('saving');
+    try {
+      const res = await fetch('/api/wines', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wine }) });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCloudStatus(data.code === 'DATABASE_NOT_CONFIGURED' ? 'local' : 'error');
+        return;
+      }
+      setCloudStatus('synced');
+    } catch { setCloudStatus('error'); }
+  }
+
+  async function persistOrder(list: Wine[]) {
+    if (cloudStatus === 'local') return;
+    setCloudStatus('saving');
+    try {
+      const order = list.map(w => ({ id: w.id, manualOrder: w.manualOrder }));
+      const res = await fetch('/api/wines', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order }) });
+      if (!res.ok) throw new Error('order');
+      setCloudStatus('synced');
+    } catch { setCloudStatus('error'); }
+  }
+
+  async function deleteRemoteWine(id: string) {
+    if (cloudStatus === 'local') return;
+    setCloudStatus('saving');
+    try {
+      const res = await fetch('/api/wines', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+      if (!res.ok) throw new Error('delete');
+      setCloudStatus('synced');
+    } catch { setCloudStatus('error'); }
+  }
+
+  async function replaceCloud(list: Wine[]) {
+    if (cloudStatus === 'local') return;
+    setCloudStatus('saving');
+    try {
+      const res = await fetch('/api/wines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wines: list, replace: true }) });
+      if (!res.ok) throw new Error('replace');
+      setCloudStatus('synced');
+    } catch { setCloudStatus('error'); }
+  }
 
   const cellarWines = useMemo(() => wines.filter(w => w.status !== 'wishlist'), [wines]);
   const wishlist = useMemo(() => wines.filter(w => w.status === 'wishlist'), [wines]);
@@ -70,9 +143,9 @@ function App() {
     const q = search.trim().toLowerCase();
     return cellarWines.filter(w => {
       const haystack = [w.name,w.winery,w.type,w.aging,w.protection,w.denomination,w.region,w.country,...w.grapes,String(w.vintage || '')].join(' ').toLowerCase();
-      return (!q || haystack.includes(q)) && (typeFilter === 'Todos' || w.type === typeFilter) && (protectionFilter === 'Todas' || w.protection === protectionFilter);
+      return (!q || haystack.includes(q)) && (typeFilter === 'Todos' || w.type === typeFilter);
     });
-  }, [cellarWines, search, typeFilter, protectionFilter]);
+  }, [cellarWines, search, typeFilter]);
 
   const sorted = useMemo(() => sortWines(filtered, sortMode), [filtered, sortMode]);
   const groups = useMemo(() => {
@@ -91,6 +164,7 @@ function App() {
       const updated: Wine = { ...editingWine, ...form };
       setWines(prev => prev.map(w => w.id === editingWine.id ? updated : w));
       setSelectedWine(updated);
+      void persistWine(updated);
     } else {
       const wine: Wine = {
         ...form,
@@ -100,6 +174,7 @@ function App() {
       };
       setWines(prev => [...prev, wine]);
       setSelectedWine(wine);
+      void persistWine(wine);
     }
     setForm(emptyForm());
     setEditingWine(null);
@@ -124,13 +199,18 @@ function App() {
   }
 
   function patchWine(id: string, patch: Partial<Wine>) {
-    setWines(prev => prev.map(w => w.id === id ? { ...w, ...patch } : w));
-    setSelectedWine(prev => prev?.id === id ? { ...prev, ...patch } : prev);
+    const current = wines.find(w => w.id === id);
+    if (!current) return;
+    const updated = { ...current, ...patch };
+    setWines(prev => prev.map(w => w.id === id ? updated : w));
+    setSelectedWine(prev => prev?.id === id ? updated : prev);
+    void persistWine(updated);
   }
 
   function removeWine(id: string) {
     setWines(prev => prev.filter(w => w.id !== id));
     setSelectedWine(null);
+    void deleteRemoteWine(id);
   }
 
   function moveWishlistToCellar(wine: Wine) {
@@ -147,14 +227,18 @@ function App() {
           <CellarScreen
             wines={sorted} groups={groups} sortMode={sortMode} setSortMode={setSortMode} sortOpen={sortOpen} setSortOpen={setSortOpen}
             viewMode={viewMode} setViewMode={setViewMode} search={search} setSearch={setSearch} typeFilter={typeFilter} setTypeFilter={setTypeFilter}
-            protectionFilter={protectionFilter} setProtectionFilter={setProtectionFilter} onOpen={setSelectedWine}
+            onOpen={setSelectedWine}
             editingShelf={editingShelf} setEditingShelf={setEditingShelf}
-            onReorder={(ids) => setWines(prev => prev.map(w => ({ ...w, manualOrder: ids.indexOf(w.id) >= 0 ? ids.indexOf(w.id) : w.manualOrder })))}
+            onReorder={(ids) => {
+              const updated = wines.map(w => ({ ...w, manualOrder: ids.indexOf(w.id) >= 0 ? ids.indexOf(w.id) : w.manualOrder }));
+              setWines(updated);
+              void persistOrder(updated);
+            }}
           />
         )}
         {tab === 'wishlist' && <WishlistScreen wines={wishlist} onOpen={setSelectedWine} onAdd={() => resetAdd('wishlist')} />}
         {tab === 'add' && <AddScreen form={form} setForm={setForm} save={saveForm} editing={!!editingWine} moreInfo={moreInfo} setMoreInfo={setMoreInfo} onCancel={() => { setEditingWine(null); setForm(emptyForm()); setTab('cellar'); }} />}
-        {tab === 'settings' && <SettingsScreen wineCount={wines.length} onReset={() => { if (confirm('¿Restaurar los vinos de ejemplo?')) setWines(seedWines); }} />}
+        {tab === 'settings' && <SettingsScreen wineCount={wines.length} cloudStatus={cloudStatus} onReset={() => { if (confirm('¿Restaurar los vinos de ejemplo?')) { setWines(seedWines); void replaceCloud(seedWines); } }} />}
       </main>
 
       {tab !== 'add' && <BottomNav tab={tab} setTab={setTab} onAdd={() => resetAdd('cellar')} />}
@@ -200,7 +284,7 @@ function SectionTitle({ title, action, onAction }: { title: string; action?: str
 function CellarScreen(props: {
   wines: Wine[]; groups: [string, Wine[]][]; sortMode: SortMode; setSortMode: (m: SortMode) => void; sortOpen: boolean; setSortOpen: (v:boolean)=>void;
   viewMode: ViewMode; setViewMode: (m:ViewMode)=>void; search:string; setSearch:(s:string)=>void; typeFilter:'Todos'|WineType; setTypeFilter:(t:'Todos'|WineType)=>void;
-  protectionFilter:'Todas'|Protection; setProtectionFilter:(p:'Todas'|Protection)=>void; onOpen:(w:Wine)=>void;
+  onOpen:(w:Wine)=>void;
   editingShelf:boolean; setEditingShelf:(v:boolean)=>void; onReorder:(ids:string[])=>void;
 }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }), useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }));
@@ -215,7 +299,7 @@ function CellarScreen(props: {
   }
   return <div className="page cellar-page">
     <Header eyebrow="TU COLECCIÓN" title="Mi vinoteca" right={<div className="view-toggle"><button className={props.viewMode==='shelf'?'active':''} onClick={()=>props.setViewMode('shelf')}><Archive size={18}/></button><button className={props.viewMode==='list'?'active':''} onClick={()=>props.setViewMode('list')}><List size={18}/></button></div>} />
-    <div className="searchbox"><Search size={20}/><input value={props.search} onChange={e=>props.setSearch(e.target.value)} placeholder="Buscar vino, uva, DOP…"/></div>
+    <div className="searchbox"><Search size={20}/><input value={props.search} onChange={e=>props.setSearch(e.target.value)} placeholder="Buscar vino, uva, denominación…"/></div>
     <div className="filter-scroll">
       {(['Todos','Tinto','Blanco','Rosado','Espumoso'] as const).map(x => <button key={x} className={props.typeFilter===x?'chip active':'chip'} onClick={()=>props.setTypeFilter(x)}>{x}</button>)}
     </div>
@@ -224,7 +308,6 @@ function CellarScreen(props: {
         <button className="sort-button" onClick={()=>props.setSortOpen(!props.sortOpen)}><SlidersHorizontal size={18}/>{sortOptions.find(x=>x.value===props.sortMode)?.label}<ChevronDown size={17}/></button>
         {props.sortOpen && <div className="sort-menu">{sortOptions.map(o=><button key={o.value} onClick={()=>{props.setSortMode(o.value);props.setSortOpen(false);props.setEditingShelf(false)}} className={props.sortMode===o.value?'chosen':''}>{o.label}{props.sortMode===o.value&&<Check size={17}/>}</button>)}</div>}
       </div>
-      <select className="protection-select" value={props.protectionFilter} onChange={e=>props.setProtectionFilter(e.target.value as 'Todas'|Protection)}><option>Todas</option><option>DOP</option><option>IGP</option><option>Sin indicación</option></select>
     </div>
     {props.sortMode==='manual' && props.viewMode==='shelf' && <button className={props.editingShelf?'edit-shelf active':'edit-shelf'} onClick={()=>props.setEditingShelf(!props.editingShelf)}><GripVertical size={18}/>{props.editingShelf?'Terminar de ordenar':'Ordenar estantería'}</button>}
 
@@ -411,7 +494,7 @@ function AddScreen({ form, setForm, save, editing, moreInfo, setMoreInfo, onCanc
       <Field label="Notas"><textarea rows={4} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Qué te pareció, con qué lo tomaste…"/></Field>
     </div>}
     <button className="primary save-bottom" onClick={save}>{editing?'Guardar cambios':'Guardar vino'}</button>
-    {catalogOpen && <CatalogSearchModal initialQuery={[form.name, form.winery, form.vintage].filter(Boolean).join(' ')} onClose={()=>setCatalogOpen(false)} onSelect={useImportedWine} />}
+    {catalogOpen && <CatalogSearchModal initialQuery={[form.name, form.winery, (form.name || form.winery) ? form.vintage : undefined].filter(Boolean).join(' ')} onClose={()=>setCatalogOpen(false)} onSelect={useImportedWine} />}
   </div>;
 }
 
@@ -451,7 +534,7 @@ function CatalogSearchModal({ initialQuery, onClose, onSelect }: { initialQuery:
     if (foundWine) onSelect(foundWine);
   }
 
-  useEffect(() => { if (initialQuery.trim()) searchCatalog(); }, []);
+  useEffect(() => { if (/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(initialQuery)) searchCatalog(); }, []);
 
   const summary = foundWine ? [
     foundWine.vintage ? String(foundWine.vintage) : '',
@@ -515,8 +598,9 @@ function WineModal({ wine, onClose, onPatch, onEdit, onDelete, onMoveToCellar }:
 }
 function Info({label,value}:{label:string;value:string}) {return <div className="info-row"><span>{label}</span><strong>{value}</strong></div>}
 
-function SettingsScreen({ wineCount, onReset }: { wineCount:number; onReset:()=>void }) {
-  return <div className="page settings-page"><Header eyebrow="CELLER ROIG" title="Ajustes"/><div className="settings-card"><div className="settings-line"><div><strong>Pedro</strong><span>{wineCount} vinos guardados</span></div><WineIcon/></div></div><div className="settings-card"><button className="settings-line"><div><strong>Exportar colección</strong><span>Próxima fase: CSV / PDF</span></div><ExternalLink/></button><button className="settings-line" onClick={onReset}><div><strong>Restaurar ejemplo</strong><span>Vuelve a cargar los vinos de muestra</span></div><RotateCcw/></button></div><p className="settings-note">Esta primera versión guarda los datos en este dispositivo. La siguiente fase conectará la app con una base de datos en la nube para no perder la colección al cambiar de móvil.</p></div>;
+function SettingsScreen({ wineCount, cloudStatus, onReset }: { wineCount:number; cloudStatus:CloudStatus; onReset:()=>void }) {
+  const cloudCopy = cloudStatus === 'synced' ? 'Guardado en la nube' : cloudStatus === 'saving' ? 'Guardando…' : cloudStatus === 'connecting' ? 'Conectando…' : cloudStatus === 'local' ? 'Solo en este dispositivo' : 'Sin conexión con la nube';
+  return <div className="page settings-page"><Header eyebrow="CELLER ROIG" title="Ajustes"/><div className="settings-card"><div className="settings-line"><div><strong>Pedro</strong><span>{wineCount} vinos guardados</span></div><WineIcon/></div><div className="settings-line"><div><strong>Copia de seguridad</strong><span>{cloudCopy}</span></div><Archive/></div></div><div className="settings-card"><button className="settings-line"><div><strong>Exportar colección</strong><span>Próxima fase: CSV / PDF</span></div><ExternalLink/></button><button className="settings-line" onClick={onReset}><div><strong>Restaurar ejemplo</strong><span>Vuelve a cargar los vinos de muestra</span></div><RotateCcw/></button></div><p className="settings-note">Celler Roig mantiene una copia local para que la app siga siendo rápida y, cuando Neon está conectado, guarda también la colección en la nube.</p></div>;
 }
 
 function BottomNav({ tab, setTab, onAdd }: { tab:Tab; setTab:(t:Tab)=>void; onAdd:()=>void }) {
