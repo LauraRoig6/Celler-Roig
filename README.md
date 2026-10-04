@@ -1,41 +1,30 @@
-# Celler Roig — V3
+# Celler Roig — V4
 
-App móvil/PWA para gestionar la vinoteca personal de Pedro.
+Aplicación móvil/PWA para la vinoteca personal de Pedro Roig.
 
-## Qué incluye
-- Vista de estantería con botellas
-- Balda automática cada 3 vinos; se crean tantas como hagan falta
-- Orden manual mediante arrastrar y soltar
-- Orden automático por tipo, uva, añada, envejecimiento, DOP/IGP, denominación, puntuación y nombre
-- Filtro DOP / IGP
-- Mi bodega, favoritos y lista «Me gustaría probar»
-- Stock de botellas y acción «He bebido una»
-- Alta y edición de vinos con foto desde cámara/galería
-- Búsqueda web de vinos desde la propia app
-- Importación de una ficha de vino pegando su URL
-- Autorrelleno de nombre, bodega, añada, tipo, uvas, envejecimiento, DOP/IGP, denominación, región, país, graduación, precio e imagen cuando la página publica esos datos
-- PWA instalable en el móvil
-- Guardado local en esta fase
+## Despliegue en Vercel
 
-## Búsqueda web V3
-La búsqueda ya no depende únicamente de un catálogo genérico. Vercel usa funciones en `/api` para localizar páginas web y leer la ficha elegida. Si la búsqueda web no responde, hay un catálogo de respaldo.
+1. Sube **el contenido de esta carpeta** a la raíz del repositorio de GitHub.
+2. En Vercel importa el repositorio con preset **Vite**.
+3. Build command: `npm run build`.
+4. Output directory: `dist`.
 
-También puedes pegar directamente la URL de la ficha del vino (por ejemplo, la web oficial de la bodega o una tienda) y pulsar **Importar ficha**.
+## Activar búsqueda fiable de vinos
 
-## Desplegar en Vercel desde GitHub
-1. Sube **el contenido de esta carpeta a la raíz del repositorio**.
-2. Deben verse directamente `package.json`, `index.html`, `src/`, `public/`, `api/` y `vercel.json`.
-3. En Vercel importa el repositorio.
-4. Framework Preset: **Vite**.
-5. Root Directory: vacío / `.`.
-6. Build Command: `npm run build`.
-7. Output Directory: `dist`.
-8. Deploy.
+La V4 ya no usa Bing RSS ni Open Food Facts como buscador general. Usa **Serper (Google Search API)** desde una función del servidor para evitar resultados irrelevantes.
 
-No necesita ninguna variable de entorno para esta versión.
+1. Crea una cuenta en https://serper.dev/ y copia tu API key.
+2. En Vercel: **Project → Settings → Environment Variables**.
+3. Crea `SERPER_API_KEY` y pega la clave como valor.
+4. Actívala para Production (y Preview si quieres probar ramas).
+5. Haz **Redeploy** del último deployment.
 
-## Desarrollo local
-```bash
-npm install
-npm run dev
-```
+La clave queda solo en Vercel y nunca se envía al navegador ni se guarda en GitHub.
+
+## Búsqueda de fotos
+
+Cada búsqueda consulta también Google Images mediante Serper. Celler Roig muestra una galería de botellas. Al pulsar una foto, usa esa imagen y, cuando es posible, intenta además importar los datos desde la página de origen.
+
+## Datos
+
+Esta versión sigue guardando la colección en `localStorage` del dispositivo. Para uso definitivo conviene conectar Supabase en la siguiente fase.

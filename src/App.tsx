@@ -315,8 +315,16 @@ type WineSearchResult = {
   url: string;
   snippet?: string;
   source?: string;
-  provider?: 'web' | 'catalog';
-  directData?: ImportedWineData;
+  provider?: 'web';
+};
+
+type WineImageResult = {
+  id: string;
+  title: string;
+  imageUrl: string;
+  thumbnailUrl?: string;
+  pageUrl?: string;
+  source?: string;
 };
 
 function inferWineType(categories = ''): WineType | undefined {
@@ -410,56 +418,62 @@ function AddScreen({ form, setForm, save, editing, moreInfo, setMoreInfo, onCanc
 function CatalogSearchModal({ initialQuery, onClose, onSelect }: { initialQuery:string; onClose:()=>void; onSelect:(p:ImportedWineData)=>void }) {
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<WineSearchResult[]>([]);
+  const [images, setImages] = useState<WineImageResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [importingId, setImportingId] = useState('');
   const [error, setError] = useState('');
+  const [notConfigured, setNotConfigured] = useState(false);
   const [pageUrl, setPageUrl] = useState('');
-  const [fallback, setFallback] = useState(false);
 
   async function searchCatalog() {
     const q = query.trim();
     if (!q) return;
-    setLoading(true); setError(''); setFallback(false);
+    setLoading(true); setError(''); setNotConfigured(false); setResults([]); setImages([]);
     try {
       const res = await fetch(`/api/wine-search?q=${encodeURIComponent(q)}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'No se pudo buscar');
+      if (!res.ok) {
+        if (data.code === 'SEARCH_NOT_CONFIGURED') setNotConfigured(true);
+        throw new Error(data.error || 'No se pudo buscar');
+      }
       const found = Array.isArray(data.results) ? data.results : [];
+      const foundImages = Array.isArray(data.images) ? data.images : [];
       setResults(found);
-      setFallback(Boolean(data.fallback));
-      if (!found.length) setError('No he encontrado coincidencias. Prueba con el nombre completo y la añada.');
+      setImages(foundImages);
+      if (!found.length && !foundImages.length) setError('No he encontrado coincidencias fiables. Prueba con bodega + nombre + añada.');
     } catch (e) {
-      setResults([]);
       setError(e instanceof Error ? e.message : 'La búsqueda no está disponible ahora mismo.');
     } finally { setLoading(false); }
   }
 
-  async function importUrl(url: string, resultId = 'url') {
-    if (!/^https?:\/\//i.test(url.trim())) return;
+  async function importUrl(url: string, resultId = 'url', forcedImage = '') {
+    if (!/^https?:\/\//i.test(url.trim())) {
+      if (forcedImage) onSelect({ imageUrl: forcedImage });
+      return;
+    }
     setImportingId(resultId); setError('');
     try {
       const res = await fetch(`/api/wine-import?url=${encodeURIComponent(url.trim())}&hint=${encodeURIComponent(query.trim())}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'No se pudo importar la ficha');
       if (!data.wine) throw new Error('La página no contenía datos utilizables.');
-      onSelect(data.wine as ImportedWineData);
+      onSelect({ ...(data.wine as ImportedWineData), imageUrl: forcedImage || data.wine.imageUrl });
     } catch (e) {
+      if (forcedImage) {
+        onSelect({ imageUrl: forcedImage });
+        return;
+      }
       setError(e instanceof Error ? e.message : 'No he podido leer esa ficha.');
     } finally { setImportingId(''); }
   }
 
   async function useResult(result: WineSearchResult) {
-    if (result.directData) {
-      const raw = `${result.directData.rawText || ''} ${result.directData.categories || ''} ${result.title}`;
-      onSelect({
-        ...result.directData,
-        type: result.directData.type || inferWineType(raw),
-        aging: result.directData.aging || inferAgingText(raw),
-        vintage: result.directData.vintage || Number(result.title.match(/\b(19|20)\d{2}\b/)?.[0]) || undefined,
-      });
-      return;
-    }
     await importUrl(result.url, result.id);
+  }
+
+  async function useImage(result: WineImageResult) {
+    if (result.pageUrl) await importUrl(result.pageUrl, result.id, result.imageUrl);
+    else onSelect({ imageUrl: result.imageUrl });
   }
 
   useEffect(() => { if (initialQuery.trim()) searchCatalog(); }, []);
@@ -468,18 +482,34 @@ function CatalogSearchModal({ initialQuery, onClose, onSelect }: { initialQuery:
     <article className="catalog-modal">
       <div className="modal-handle"/>
       <div className="catalog-head"><div><div className="eyebrow">BUSCAR EN INTERNET</div><h2>Encontrar vino</h2></div><button className="icon-button" onClick={onClose}><X/></button></div>
-      <p className="catalog-help">Buscamos páginas reales de bodegas y tiendas. Al tocar <b>Usar este vino</b>, intentaremos copiar nombre, foto, bodega, añada, uvas, DOP/IGP, envejecimiento, país, graduación y precio cuando la web los publique.</p>
-      <div className="catalog-search"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')searchCatalog()}} placeholder="Ej. Protos Crianza 2021"/><button onClick={searchCatalog} disabled={loading}>{loading?'Buscando…':'Buscar'}</button></div>
+      <p className="catalog-help">Busca el vino como lo escribirías en Google. Mostramos resultados relacionados con vino y fotos de botellas; no usamos ya el catálogo genérico que daba resultados raros.</p>
+      <div className="catalog-search"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')searchCatalog()}} placeholder="Ej. Protos Reserva 2021"/><button onClick={searchCatalog} disabled={loading}>{loading?'Buscando…':'Buscar'}</button></div>
       {error && <div className="catalog-error">{error}</div>}
-      {fallback && <div className="catalog-warning">La búsqueda web no ha respondido y estamos usando el catálogo de respaldo. Puede tener menos datos.</div>}
-      <div className="catalog-results">
-        {results.map((r) => <div className="catalog-card web-result" key={r.id}>
-          <div className="catalog-photo web-source"><WineIcon size={32}/></div>
-          <div className="catalog-copy"><strong>{r.title || 'Resultado sin título'}</strong><span>{r.source || 'Internet'}</span>{r.snippet&&<small className="catalog-snippet">{r.snippet}</small>}<button className="primary catalog-use" disabled={!!importingId} onClick={()=>useResult(r)}>{importingId===r.id?'Leyendo ficha…':'Usar este vino'}</button></div>
-        </div>)}
-      </div>
-      <div className="image-url-box url-import-box"><strong>¿Tienes la página del vino?</strong><span>Pega el enlace de la ficha de la bodega o tienda. No hace falta que sea el enlace de la imagen.</span><div><input value={pageUrl} onChange={e=>setPageUrl(e.target.value)} inputMode="url" placeholder="https://bodega.com/vino…"/><button className="secondary" disabled={!/^https?:\/\//i.test(pageUrl.trim()) || !!importingId} onClick={()=>importUrl(pageUrl,'url')}>{importingId==='url'?'Leyendo…':'Importar ficha'}</button></div></div>
-      <p className="catalog-source">Cuantos más datos publique la página del vino, más campos podrá rellenar Celler Roig. Si un resultado sale incompleto, prueba con la web oficial de la bodega.</p>
+      {notConfigured && <div className="catalog-setup"><strong>Falta conectar el buscador</strong><span>En Vercel añade una variable de entorno llamada <code>SERPER_API_KEY</code>. Después vuelve a desplegar la app. Así la búsqueda usa resultados reales de Google y deja de devolver páginas como Google Earth.</span></div>}
+
+      {results.length > 0 && <>
+        <div className="catalog-section-title"><strong>Fichas encontradas</strong><span>Elige la que corresponda al vino.</span></div>
+        <div className="catalog-results">
+          {results.map((r) => <div className="catalog-card web-result" key={r.id}>
+            <div className="catalog-photo web-source"><WineIcon size={32}/></div>
+            <div className="catalog-copy"><strong>{r.title || 'Resultado sin título'}</strong><span>{r.source || 'Internet'}</span>{r.snippet&&<small className="catalog-snippet">{r.snippet}</small>}<button className="primary catalog-use" disabled={!!importingId} onClick={()=>useResult(r)}>{importingId===r.id?'Leyendo ficha…':'Usar esta ficha'}</button></div>
+          </div>)}
+        </div>
+      </>}
+
+      {images.length > 0 && <>
+        <div className="catalog-section-title"><strong>Fotos encontradas</strong><span>Toca una botella y se pondrá directamente en Celler Roig.</span></div>
+        <div className="catalog-image-grid">
+          {images.map(img => <button key={img.id} className="catalog-image-choice" disabled={!!importingId} onClick={()=>useImage(img)}>
+            <div><img src={img.thumbnailUrl || img.imageUrl} alt={img.title || query}/></div>
+            <strong>{img.title || 'Botella'}</strong><span>{img.source || 'Internet'}</span>
+            <small>{importingId===img.id?'Importando…':'Usar foto y datos'}</small>
+          </button>)}
+        </div>
+      </>}
+
+      <div className="image-url-box url-import-box"><strong>¿Tienes la página exacta del vino?</strong><span>Pega el enlace de la bodega o tienda y Celler Roig intentará leer su ficha.</span><div><input value={pageUrl} onChange={e=>setPageUrl(e.target.value)} inputMode="url" placeholder="https://bodega.com/vino…"/><button className="secondary" disabled={!/^https?:\/\//i.test(pageUrl.trim()) || !!importingId} onClick={()=>importUrl(pageUrl,'url')}>{importingId==='url'?'Leyendo…':'Importar ficha'}</button></div></div>
+      <p className="catalog-source">La información automática depende de lo que publique cada bodega o tienda. Antes de guardar puedes corregir cualquier campo.</p>
     </article>
   </div>;
 }

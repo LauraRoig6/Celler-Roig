@@ -86,6 +86,43 @@ function asName(v) {
   if (typeof v === 'object') return v.name || '';
   return '';
 }
+
+function normalizedLabel(s = '') {
+  return stripHtml(String(s)).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9%]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function extractPairs(html) {
+  const pairs = [];
+  for (const m of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [...m[1].matchAll(/<(?:th|td)[^>]*>([\s\S]*?)<\/(?:th|td)>/gi)].map(x => stripHtml(x[1]));
+    if (cells.length >= 2 && cells[0] && cells[1]) pairs.push([cells[0], cells.slice(1).join(' · ')]);
+  }
+  for (const m of html.matchAll(/<dt[^>]*>([\s\S]*?)<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/gi)) {
+    const a = stripHtml(m[1]), b = stripHtml(m[2]); if (a && b) pairs.push([a,b]);
+  }
+  for (const m of html.matchAll(/<(?:li|p|div)[^>]*>[\s\S]{0,120}?<(?:strong|b)[^>]*>([^<]{2,50})<\/(?:strong|b)>\s*:?\s*([^<]{2,120})/gi)) {
+    const a = stripHtml(m[1]), b = stripHtml(m[2]); if (a && b) pairs.push([a,b]);
+  }
+  return pairs.slice(0, 400);
+}
+function pairValue(pairs, aliases) {
+  const wanted = aliases.map(normalizedLabel);
+  for (const [label, value] of pairs) {
+    const n = normalizedLabel(label);
+    if (wanted.some(a => n === a || n.includes(a) || a.includes(n))) return String(value || '').trim();
+  }
+  return '';
+}
+function additionalPropertyMap(product) {
+  const out = [];
+  const values = Array.isArray(product?.additionalProperty) ? product.additionalProperty : product?.additionalProperty ? [product.additionalProperty] : [];
+  for (const item of values) {
+    if (!item || typeof item !== 'object') continue;
+    const name = asName(item.name) || asName(item.propertyID);
+    const value = asName(item.value) || asName(item.valueReference);
+    if (name && value) out.push([name, value]);
+  }
+  return out;
+}
 function inferType(text) {
   const t = text.toLowerCase();
   if (/espumoso|sparkling|champagne|\bcava\b/.test(t)) return 'Espumoso';
@@ -180,22 +217,32 @@ export default async function handler(req, res) {
     const pageTitle = meta(html,'og:title') || titleTag(html);
     const description = asName(product.description) || meta(html,'og:description') || meta(html,'description');
     const bodyText = stripHtml(html);
-    const combined = `${hint} ${product.name || ''} ${pageTitle} ${description} ${bodyText.slice(0, 180000)}`;
-    const app = inferAppellation(combined);
+    const pairs = [...additionalPropertyMap(product), ...extractPairs(html)];
+    const grapePair = pairValue(pairs, ['uva','uvas','variedad','variedades','variedad de uva','variedades de uva','grape','grapes']);
+    const denominationPair = pairValue(pairs, ['denominacion de origen','denominación de origen','dop','d.o.','do','igp','indicacion geografica','indicación geográfica']);
+    const wineryPair = pairValue(pairs, ['bodega','productor','elaborador','winery','producer','marca']);
+    const agingPair = pairValue(pairs, ['envejecimiento','crianza','maduracion','maduración','aging','barrica']);
+    const typePair = pairValue(pairs, ['tipo de vino','tipo','wine type']);
+    const alcoholPair = pairValue(pairs, ['graduacion','graduación','alcohol','grado alcoholico','grado alcohólico','% vol']);
+    const countryPair = pairValue(pairs, ['pais','país','country']);
+    const regionPair = pairValue(pairs, ['region','región','zona','comunidad autonoma','comunidad autónoma']);
+    const combined = `${hint} ${product.name || ''} ${pageTitle} ${description} ${denominationPair} ${grapePair} ${agingPair} ${typePair} ${bodyText.slice(0, 180000)}`;
+    const app = inferAppellation(`${denominationPair} ${combined}`);
 
     const productImage = Array.isArray(product.image) ? product.image[0] : (typeof product.image === 'object' ? product.image?.url : product.image);
     const imageUrl = resolveUrl(productImage || meta(html,'og:image') || meta(html,'twitter:image'), response.url || url.toString());
-    const brand = asName(product.brand) || asName(product.manufacturer);
+    const brand = asName(product.brand) || asName(product.manufacturer) || wineryPair;
     const name = cleanProductName(asName(product.name) || pageTitle, pageTitle);
     const vintage = inferVintage(`${hint} ${name} ${description}`) || inferVintage(combined);
-    const grapes = inferGrapes(combined);
-    const type = inferType(`${name} ${description} ${combined.slice(0,50000)}`);
-    const aging = inferAging(`${name} ${description} ${combined.slice(0,50000)}`);
-    const alcohol = inferAlcohol(`${description} ${bodyText.slice(0,120000)}`);
+    const grapes = inferGrapes(`${grapePair} ${combined}`);
+    const type = inferType(`${typePair} ${name} ${description} ${combined.slice(0,50000)}`);
+    const aging = inferAging(`${agingPair} ${name} ${description} ${combined.slice(0,50000)}`);
+    const alcohol = inferAlcohol(`${alcoholPair} ${description} ${bodyText.slice(0,120000)}`);
     const price = getOfferPrice(product);
-    const country = app.denomination ? 'España' : (/\bespaña\b|\bspain\b/i.test(combined) || url.hostname.endsWith('.es') ? 'España' : '');
+    const country = countryPair || (app.denomination ? 'España' : (/\bespaña\b|\bspain\b/i.test(combined) || url.hostname.endsWith('.es') ? 'España' : ''));
+    const region = app.region || regionPair;
 
-    const fieldsFound = [name, brand, vintage, type, aging !== 'Sin indicar' ? aging : '', app.denomination, grapes.length, alcohol, imageUrl].filter(Boolean).length;
+    const fieldsFound = [name, brand, vintage, type, aging !== 'Sin indicar' ? aging : '', app.denomination, grapes.length, alcohol, imageUrl, region].filter(Boolean).length;
 
     return res.status(200).json({
       wine: {
@@ -207,7 +254,7 @@ export default async function handler(req, res) {
         aging,
         protection: app.protection,
         denomination: app.denomination,
-        region: app.region,
+        region,
         country,
         alcohol,
         price,
