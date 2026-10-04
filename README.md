@@ -35,3 +35,10 @@ npm run dev
 ```bash
 npm run build
 ```
+
+
+## Cambios V2
+- Branding: Celler Roig como nombre principal y “La vinoteca de Pedro Roig” como subtítulo.
+- Búsqueda de vinos online dentro del formulario con selección directa de imagen y autocompletado básico.
+- Posibilidad de pegar una URL directa de imagen.
+- Estanterías automáticas: 3 botellas por balda; al añadir la cuarta se crea una balda nueva, en cualquier modo de ordenación.

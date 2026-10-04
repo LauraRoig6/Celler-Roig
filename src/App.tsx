@@ -14,7 +14,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import type { Aging, Protection, SortMode, Wine, WineStatus, WineType } from './types';
 import { seedWines } from './seed';
-import { bottleSearchUrl, fileToDataUrl, groupLabel, sortWines } from './utils';
+import { fileToDataUrl, groupLabel, sortWines } from './utils';
 
 type Tab = 'home' | 'cellar' | 'add' | 'wishlist' | 'settings';
 type ViewMode = 'shelf' | 'list';
@@ -175,7 +175,7 @@ function HomeScreen({ wines, favorites, bottleCount, onOpen, onGo, onAdd }: {
   return <div className="page home-page">
     <section className="brand-hero">
       <div className="brand-mark"><WineIcon size={28}/></div>
-      <div><div className="brand-kicker">CELLER ROIG</div><div className="brand-name">La vinoteca de Pedro</div><div className="brand-sub">Tu vinoteca personal</div></div>
+      <div className="brand-copy"><div className="brand-name">CELLER ROIG</div><div className="brand-sub">La vinoteca de Pedro Roig</div></div>
     </section>
 
     <section className="stats-grid">
@@ -238,12 +238,22 @@ function CellarScreen(props: {
   </div>;
 }
 
+const SHELF_CAPACITY = 3;
+
 function ShelfGroup({ label, wines, onOpen, draggable }: { label:string; wines:Wine[]; onOpen:(w:Wine)=>void; draggable:boolean }) {
-  return <section className="shelf-section"><div className="shelf-heading"><h2>{label}</h2><span>{wines.length} {wines.length===1?'vino':'vinos'}</span></div>
+  const shelves: Wine[][] = [];
+  for (let i = 0; i < wines.length; i += SHELF_CAPACITY) shelves.push(wines.slice(i, i + SHELF_CAPACITY));
+
+  return <section className="shelf-section">
+    <div className="shelf-heading"><h2>{label}</h2><span>{wines.length} {wines.length===1?'vino':'vinos'} · {shelves.length} {shelves.length===1?'balda':'baldas'}</span></div>
     <SortableContext items={wines.map(w=>w.id)} strategy={rectSortingStrategy}>
-      <div className="shelf-grid">{wines.map(w=><SortableBottle key={w.id} wine={w} onOpen={onOpen} enabled={draggable}/>)}</div>
+      <div className="shelf-stack">
+        {shelves.map((row, index) => <div className="shelf-row" key={`${label}-${index}`}>
+          <div className="shelf-grid">{row.map(w=><SortableBottle key={w.id} wine={w} onOpen={onOpen} enabled={draggable}/>)}</div>
+          <div className="wood-shelf" aria-hidden="true"><div/></div>
+        </div>)}
+      </div>
     </SortableContext>
-    <div className="wood-shelf"><div/></div>
   </section>;
 }
 
@@ -278,19 +288,60 @@ function WishlistScreen({ wines, onOpen, onAdd }: { wines:Wine[]; onOpen:(w:Wine
   </div>;
 }
 
+type CatalogProduct = {
+  code?: string;
+  product_name?: string;
+  brands?: string;
+  image_url?: string;
+  image_front_url?: string;
+  countries?: string;
+  categories?: string;
+  nutriments?: { alcohol?: number };
+};
+
+function inferWineType(categories = ''): WineType | undefined {
+  const value = categories.toLowerCase();
+  if (value.includes('sparkling') || value.includes('espumoso') || value.includes('champagne') || value.includes('cava')) return 'Espumoso';
+  if (value.includes('rosé') || value.includes('rose wine') || value.includes('rosado')) return 'Rosado';
+  if (value.includes('white wine') || value.includes('vino blanco') || value.includes('white wines')) return 'Blanco';
+  if (value.includes('red wine') || value.includes('vino tinto') || value.includes('red wines')) return 'Tinto';
+  return undefined;
+}
+
 function AddScreen({ form, setForm, save, editing, moreInfo, setMoreInfo, onCancel }: {
   form: Omit<Wine,'id'|'createdAt'|'manualOrder'>; setForm: React.Dispatch<React.SetStateAction<Omit<Wine,'id'|'createdAt'|'manualOrder'>>>; save:()=>void; editing:boolean; moreInfo:boolean; setMoreInfo:(v:boolean)=>void; onCancel:()=>void;
 }) {
-  async function pickImage(file?: File) { if (file) setForm(f=>({...f,imageUrl:''})); if (file) setForm(f=>({...f,imageUrl: ''})); if(file) { const data = await fileToDataUrl(file); setForm(f=>({...f,imageUrl:data})); } }
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  async function pickImage(file?: File) {
+    if (!file) return;
+    const data = await fileToDataUrl(file);
+    setForm(f=>({...f,imageUrl:data}));
+  }
+  function useCatalogProduct(product: CatalogProduct) {
+    const inferredVintage = product.product_name?.match(/\b(19|20)\d{2}\b/)?.[0];
+    const inferredType = inferWineType(product.categories);
+    const alcohol = Number(product.nutriments?.alcohol);
+    setForm(f => ({
+      ...f,
+      name: product.product_name?.trim() || f.name,
+      winery: product.brands?.split(',')[0]?.trim() || f.winery,
+      vintage: inferredVintage ? Number(inferredVintage) : f.vintage,
+      type: inferredType || f.type,
+      country: product.countries?.split(',')[0]?.trim() || f.country,
+      alcohol: Number.isFinite(alcohol) && alcohol > 0 ? alcohol : f.alcohol,
+      imageUrl: product.image_url || product.image_front_url || f.imageUrl,
+    }));
+    setCatalogOpen(false);
+  }
   return <div className="page add-page"><div className="add-top"><button className="icon-button" onClick={onCancel}><X/></button><div><div className="eyebrow">{editing?'EDITAR':'NUEVO VINO'}</div><h1>{editing?'Editar vino':'Añadir vino'}</h1></div><button className="save-top" onClick={save}>Guardar</button></div>
 
     <div className="image-picker">
       <BottleVisual wine={{...form,id:'preview',createdAt:'',manualOrder:0}} />
       <div className="image-actions">
         <label className="secondary"><Camera size={18}/> Hacer / elegir foto<input type="file" accept="image/*" capture="environment" onChange={e=>pickImage(e.target.files?.[0])}/></label>
-        <a className="ghost-button" href={bottleSearchUrl(form.name || 'vino', form.winery)} target="_blank" rel="noreferrer"><Search size={18}/> Buscar imagen <ExternalLink size={14}/></a>
+        <button type="button" className="ghost-button" onClick={()=>setCatalogOpen(true)}><Search size={18}/> Buscar vino online</button>
       </div>
-      <p>Para que quede perfecta en la estantería, usa una imagen de la botella con fondo transparente.</p>
+      <p>Busca el vino dentro de la app y toca un resultado: usaremos su foto y rellenaremos automáticamente los datos que estén disponibles.</p>
     </div>
 
     <div className="form-card">
@@ -308,11 +359,65 @@ function AddScreen({ form, setForm, save, editing, moreInfo, setMoreInfo, onCanc
       <Field label={form.protection==='DOP'?'DOP / Denominación':form.protection==='IGP'?'IGP / Indicación geográfica':'Zona / denominación'}><input value={form.denomination} onChange={e=>setForm(f=>({...f,denomination:e.target.value}))} placeholder="Ej. Rioja, Utiel-Requena…"/></Field>
       <div className="two-cols"><Field label="Región"><input value={form.region} onChange={e=>setForm(f=>({...f,region:e.target.value}))}/></Field><Field label="País"><input value={form.country} onChange={e=>setForm(f=>({...f,country:e.target.value}))}/></Field></div>
       <div className="two-cols"><Field label="Precio (€)"><input type="number" inputMode="decimal" step="0.01" value={form.price ?? ''} onChange={e=>setForm(f=>({...f,price:e.target.value?Number(e.target.value):undefined}))}/></Field><Field label="Dónde lo compré"><input value={form.shop} onChange={e=>setForm(f=>({...f,shop:e.target.value}))}/></Field></div>
+      <Field label="Graduación (% vol.)"><input type="number" inputMode="decimal" step="0.1" value={form.alcohol ?? ''} onChange={e=>setForm(f=>({...f,alcohol:e.target.value?Number(e.target.value):undefined}))}/></Field>
       <Field label="Puntuación (0–10)"><input type="number" inputMode="decimal" min="0" max="10" step="0.1" value={form.score ?? ''} onChange={e=>setForm(f=>({...f,score:e.target.value?Math.min(10,Math.max(0,Number(e.target.value))):undefined}))}/></Field>
       <Field label="¿Lo comprarías otra vez?"><div className="choice-grid three">{(['Sí','Quizá','No'] as const).map(x=><button key={x} className={form.rebuy===x?'choice active':'choice'} onClick={()=>setForm(f=>({...f,rebuy:x}))}>{x}</button>)}</div></Field>
       <Field label="Notas"><textarea rows={4} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Qué te pareció, con qué lo tomaste…"/></Field>
     </div>}
     <button className="primary save-bottom" onClick={save}>{editing?'Guardar cambios':'Guardar vino'}</button>
+    {catalogOpen && <CatalogSearchModal initialQuery={[form.name, form.winery].filter(Boolean).join(' ')} onClose={()=>setCatalogOpen(false)} onSelect={useCatalogProduct} onUseImage={(url)=>{setForm(f=>({...f,imageUrl:url}));setCatalogOpen(false)}} />}
+  </div>;
+}
+
+function CatalogSearchModal({ initialQuery, onClose, onSelect, onUseImage }: { initialQuery:string; onClose:()=>void; onSelect:(p:CatalogProduct)=>void; onUseImage:(url:string)=>void }) {
+  const [query, setQuery] = useState(initialQuery);
+  const [results, setResults] = useState<CatalogProduct[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+
+  async function searchCatalog() {
+    const q = query.trim();
+    if (!q) return;
+    setLoading(true); setError('');
+    try {
+      const params = new URLSearchParams({
+        search_terms: q,
+        search_simple: '1',
+        action: 'process',
+        json: '1',
+        page_size: '18',
+        fields: 'code,product_name,brands,image_url,image_front_url,countries,categories,nutriments',
+      });
+      const res = await fetch(`https://world.openfoodfacts.org/cgi/search.pl?${params.toString()}`);
+      if (!res.ok) throw new Error('No se pudo consultar el catálogo');
+      const data = await res.json();
+      const products = (Array.isArray(data.products) ? data.products : []).filter((p: CatalogProduct) => p.product_name || p.image_url || p.image_front_url);
+      setResults(products);
+      if (!products.length) setError('No he encontrado coincidencias. Prueba con el nombre y la bodega.');
+    } catch {
+      setError('La búsqueda online no está disponible ahora mismo. Puedes subir una foto o pegar la URL de una imagen.');
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { if (initialQuery.trim()) searchCatalog(); }, []);
+
+  return <div className="modal-backdrop catalog-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}>
+    <article className="catalog-modal">
+      <div className="modal-handle"/>
+      <div className="catalog-head"><div><div className="eyebrow">BUSCAR EN INTERNET</div><h2>Encontrar vino</h2></div><button className="icon-button" onClick={onClose}><X/></button></div>
+      <p className="catalog-help">Escribe el nombre del vino. Al tocar <b>Usar este vino</b>, la foto y los datos disponibles se copiarán directamente al registro.</p>
+      <div className="catalog-search"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')searchCatalog()}} placeholder="Ej. Muga Reserva 2019"/><button onClick={searchCatalog} disabled={loading}>{loading?'Buscando…':'Buscar'}</button></div>
+      {error && <div className="catalog-error">{error}</div>}
+      <div className="catalog-results">
+        {results.map((p, i) => <div className="catalog-card" key={p.code || `${p.product_name}-${i}`}>
+          <div className="catalog-photo">{(p.image_url || p.image_front_url) ? <img src={p.image_url || p.image_front_url} alt={p.product_name || 'Vino'}/> : <WineIcon size={34}/>}</div>
+          <div className="catalog-copy"><strong>{p.product_name || 'Vino sin nombre'}</strong><span>{p.brands || 'Bodega no indicada'}</span>{p.countries&&<small>{p.countries.split(',')[0]}</small>}<button className="primary catalog-use" onClick={()=>onSelect(p)}>Usar este vino</button></div>
+        </div>)}
+      </div>
+      <div className="image-url-box"><strong>¿Ya tienes una imagen de Internet?</strong><span>Pega el enlace directo de la imagen y la pondremos en la estantería.</span><div><input value={imageUrl} onChange={e=>setImageUrl(e.target.value)} inputMode="url" placeholder="https://…/botella.png"/><button className="secondary" disabled={!/^https?:\/\//i.test(imageUrl.trim())} onClick={()=>onUseImage(imageUrl.trim())}>Usar imagen</button></div></div>
+      <p className="catalog-source">La búsqueda automática usa un catálogo público de productos. Algunos vinos pueden no aparecer o tener datos incompletos.</p>
+    </article>
   </div>;
 }
 
