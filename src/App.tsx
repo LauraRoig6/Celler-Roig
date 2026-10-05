@@ -13,7 +13,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Aging, Protection, SortMode, Tasting, Wine, WineStatus, WineType } from './types';
-import { displayAging, groupLabel, prepareBottleImageFromUrl, preparePhotoForLens, sortWines, wineMatchesQuery } from './utils';
+import { displayAging, fileToDataUrl, groupLabel, prepareBottleImageFromUrl, preparePhotoForLens, sortWines, wineMatchesQuery } from './utils';
 
 type Tab = 'home' | 'cellar' | 'tried' | 'add' | 'wishlist' | 'settings';
 type ViewMode = 'shelf' | 'list';
@@ -117,6 +117,12 @@ function pairingSuggestion(type: WineType, grapes: string[], aging: Aging = 'Sin
     return 'Carnes, guisos, embutidos y quesos';
   }
   return '';
+}
+
+function autoPairingForForm(type: WineType, grapes: string[], aging: Aging = 'Sin indicar') {
+  const normalized = normalizeGrapeList(grapes);
+  if (type === 'Sin indicar' || normalized.length === 0) return '';
+  return pairingSuggestion(type, normalized, aging);
 }
 
 
@@ -729,8 +735,28 @@ function mergeWineSources(base:ImportedWineData|null,candidates:ImportedWineData
 function inferWineType(categories=''):WineType|undefined{const value=categories.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();if(/espumoso|sparkling|champagne|\bcava\b|prosecco/.test(value))return'Espumoso';if(/rosado|rose wine|vin rose|vino rosato|\brosato\b/.test(value))return'Rosado';if(/vino blanco|white wine|vin blanc|bianco|\bblanco\b/.test(value))return'Blanco';if(/vino tinto|red wine|vin rouge|rosso|\btinto\b/.test(value))return'Tinto';return undefined;}
 function inferAgingText(text=''):Aging|undefined{const value=text.toLowerCase();if(value.includes('gran reserva'))return'Gran Reserva';if(/\breserva\b/.test(value))return'Reserva';if(/\bcrianza\b/.test(value))return'Crianza';if(/\broble\b|barrica/.test(value))return'Roble';if(/\bjoven\b/.test(value))return'Joven';return undefined;}
 
+function resolveImportedType(product: ImportedWineData): WineType | undefined {
+  const raw = `${product.name||''} ${product.categories||''} ${product.rawText||''}`;
+  const explicit = inferWineType(raw);
+  if (explicit) return explicit;
+  const candidate = product.type;
+  const confidence = product.typeConfidence ?? 0;
+  if (!candidate || candidate === 'Sin indicar') return undefined;
+  const normalized = raw.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  if (candidate === 'Espumoso') {
+    if (/(cava|champagne|prosecco|espumoso|sparkling|frizzante|brut|corpinnat|ancestral)/.test(normalized)) return 'Espumoso';
+    if (confidence >= 0.98) return 'Espumoso';
+    if (/(crianza|reserva|gran reserva|roble|tempranillo|rioja|ribera|tinto|merlot|cabernet|garnacha|syrah|mencia|bobal|monastrell)/.test(normalized)) return undefined;
+    return undefined;
+  }
+  if (candidate === 'Rosado' && confidence >= 0.8) return 'Rosado';
+  if (candidate === 'Blanco' && confidence >= 0.8) return 'Blanco';
+  if (candidate === 'Tinto' && confidence >= 0.75) return 'Tinto';
+  return undefined;
+}
+
 function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{form:EditableWine;setForm:React.Dispatch<React.SetStateAction<EditableWine>>;save:()=>void;editing:boolean;moreInfo:boolean;setMoreInfo:(v:boolean)=>void;onCancel:()=>void;}) {
-  const [catalogOpen,setCatalogOpen]=useState(false); const [catalogInitial,setCatalogInitial]=useState(''); const [catalogSeedImages,setCatalogSeedImages]=useState<WineImageResult[]>([]); const [catalogFromPhoto,setCatalogFromPhoto]=useState(false); const [photoMessage,setPhotoMessage]=useState(''); const [photoBusy,setPhotoBusy]=useState(false); const [dictating,setDictating]=useState(false); const [barcodeOpen,setBarcodeOpen]=useState(false); const [reviewOpen,setReviewOpen]=useState(false); const [reviewNeeded,setReviewNeeded]=useState(false); const [autofillSource,setAutofillSource]=useState('');
+  const [catalogOpen,setCatalogOpen]=useState(false); const [catalogInitial,setCatalogInitial]=useState(''); const [catalogSeedImages,setCatalogSeedImages]=useState<WineImageResult[]>([]); const [catalogFromPhoto,setCatalogFromPhoto]=useState(false); const [photoMessage,setPhotoMessage]=useState(''); const [photoBusy,setPhotoBusy]=useState(false); const [dictating,setDictating]=useState(false); const [barcodeOpen,setBarcodeOpen]=useState(false); const [reviewOpen,setReviewOpen]=useState(false); const [reviewNeeded,setReviewNeeded]=useState(false); const [autofillSource,setAutofillSource]=useState(''); const [aiOpen,setAiOpen]=useState(false);
   async function pickImage(file?:File){
     if(!file)return;
     setPhotoBusy(true);
@@ -787,21 +813,49 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
   function useBarcode(code:string){
     setBarcodeOpen(false);setCatalogSeedImages([]);setCatalogFromPhoto(false);setCatalogInitial(code);setPhotoMessage(`Código ${code} leído. Buscando la botella y su ficha…`);setCatalogOpen(true);
   }
+
+  async function useAiAutofill(front?:File, back?:File){
+    if(!front){ setPhotoMessage('Haz al menos una foto de la etiqueta delantera.'); return; }
+    setPhotoBusy(true);
+    setPhotoMessage(back ? 'Leyendo las dos etiquetas con IA…' : 'Leyendo la etiqueta con IA…');
+    try {
+      const frontImageDataUrl = await preparePhotoForLens(front);
+      const backImageDataUrl = back ? await preparePhotoForLens(back) : '';
+      const res = await fetch('/api/wine-autofill', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ frontImageDataUrl, backImageDataUrl })
+      });
+      const data = await res.json();
+      if(!res.ok) throw new Error(data.error || 'No he podido leer las etiquetas.');
+      const wine = data?.wine as ImportedWineData | undefined;
+      if(!wine?.name && !wine?.winery && !wine?.vintage) throw new Error('No he podido sacar suficientes datos útiles de la etiqueta.');
+      useImportedWine({ ...(wine||{}), sourceTitle: String(data?.source || 'IA desde etiquetas') });
+      setAiOpen(false);
+      const query = [wine?.name, wine?.winery, wine?.vintage].filter(Boolean).join(' ');
+      setPhotoMessage(query ? `He rellenado la ficha a partir de las etiquetas. Si quieres, ahora puedes usar “Buscar botella y datos” para encontrar una foto mejor de ${query}.` : 'He rellenado la ficha a partir de las etiquetas. Revisa los datos antes de guardar.');
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'No he podido leer las etiquetas.';
+      setPhotoMessage(message);
+      throw e;
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
   function dictate(){const w=window as any;const Speech=w.SpeechRecognition||w.webkitSpeechRecognition;if(!Speech){alert('El dictado no está disponible en este navegador. Puedes usar el micrófono del teclado del móvil.');return;}const r=new Speech();r.lang='es-ES';r.interimResults=false;r.maxAlternatives=1;setDictating(true);r.onresult=(e:any)=>{const text=e.results?.[0]?.[0]?.transcript||'';setForm(f=>({...f,notes:[f.notes,text].filter(Boolean).join(f.notes?' ':'')}));};r.onerror=()=>setDictating(false);r.onend=()=>setDictating(false);r.start();}
   return <div className="page add-page"><div className="add-top"><button className="icon-button" onClick={onCancel}><X/></button><div><div className="eyebrow">{editing?'EDITAR':'NUEVO VINO'}</div><h1>{editing?'Editar vino':'Añadir vino'}</h1></div><button className="save-top" onClick={requestSave}>Guardar</button></div>
-    <div className="image-picker"><BottleVisual wine={{...form,id:'preview',createdAt:'',manualOrder:0}}/><div className="image-actions"><label className="secondary photo-primary"><Camera size={18}/>{photoBusy?'Buscando…':'Escanear botella'}<input type="file" accept="image/*" capture="environment" onChange={e=>pickImage(e.target.files?.[0])}/></label><button type="button" className="ghost-button" onClick={openCatalog}><Search size={18}/> Buscar botella y datos</button><button type="button" className="ghost-button" onClick={()=>setBarcodeOpen(true)}><ScanBarcode size={18}/> Escanear código</button></div><p>{photoMessage||'Haz una foto nítida de la etiqueta. La usamos sólo para identificar el vino; después Celler Roig busca la foto y la ficha en vinotecas especializadas.'}</p></div>
+    <div className="image-picker"><BottleVisual wine={{...form,id:'preview',createdAt:'',manualOrder:0}}/><div className="image-actions"><button type="button" className="secondary photo-primary" onClick={()=>setAiOpen(true)}><Camera size={18}/>{photoBusy?'Leyendo…':'Leer etiquetas con IA'}</button><button type="button" className="ghost-button" onClick={openCatalog}><Search size={18}/> Buscar botella y datos</button><button type="button" className="ghost-button" onClick={()=>setBarcodeOpen(true)}><ScanBarcode size={18}/> Escanear código</button></div><p>{photoMessage||'Haz una foto de la etiqueta delantera y, si puedes, otra de la trasera. La IA lee lo que aparece en la etiqueta y rellena la ficha; después, si quieres, puedes buscar una foto limpia de la botella.'}</p></div>
 
     <div className="form-card essentials-card">
       <Field label="Nombre del vino *"><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Ej. Muga Reserva"/></Field>
       <div className="two-cols"><Field label="Añada"><input type="number" inputMode="numeric" value={form.vintage||''} onChange={e=>setForm(f=>({...f,vintage:e.target.value?Number(e.target.value):undefined}))}/></Field><Field label="Bodega / productor"><input value={form.winery} onChange={e=>setForm(f=>({...f,winery:e.target.value}))} placeholder="Bodegas Muga"/></Field></div>
-      <Field label="Tipo"><div className="choice-grid">{(['Tinto','Blanco','Rosado','Espumoso'] as const).map(t=><button type="button" key={t} className={form.type===t?'choice active':'choice'} onClick={()=>setForm(f=>({...f,type:t,pairing:f.pairing||pairingSuggestion(t,f.grapes,f.aging),pairingSource:f.pairingSource||(pairingSuggestion(t,f.grapes,f.aging)?'sugerencia':'')}))}>{t}</button>)}</div>{form.type==='Sin indicar'&&<small className="field-hint">Si la búsqueda no está segura, lo dejamos sin indicar para que lo elijas tú.</small>}</Field>
+      <Field label="Tipo"><div className="choice-grid">{(['Tinto','Blanco','Rosado','Espumoso'] as const).map(t=><button type="button" key={t} className={form.type===t?'choice active':'choice'} onClick={()=>setForm(f=>{const suggested=autoPairingForForm(t,f.grapes,f.aging);return {...f,type:t,pairing:f.pairingSource==='manual'||f.pairingSource==='web'||f.pairingSource==='label'?f.pairing:(suggested||''),pairingSource:f.pairingSource==='manual'||f.pairingSource==='web'||f.pairingSource==='label'?f.pairingSource:(suggested?'sugerencia':'')};})}>{t}</button>)}</div>{form.type==='Sin indicar'&&<small className="field-hint">Si la búsqueda no está segura, lo dejamos sin indicar para que lo elijas tú.</small>}</Field>
 
-      <Field label="Uva / variedades"><input value={form.grapes.join(', ')} onChange={e=>{const grapes=normalizeGrapeList(e.target.value.split(',').map(x=>x.trim()).filter(Boolean));setForm(f=>({...f,grapes,pairing:f.pairingSource==='web'?f.pairing:pairingSuggestion(f.type,grapes,f.aging),pairingSource:f.pairingSource==='web'?'web':(pairingSuggestion(f.type,grapes,f.aging)?'sugerencia':'')}));}} placeholder="Tempranillo, Garnacha, Pinot Noir…"/><small className="field-hint">Unificamos sinónimos de la misma uva (por ejemplo, Grenache → Garnacha).</small></Field>
-      <Field label="Envejecimiento"><select value={form.aging} onChange={e=>{const aging=e.target.value as Aging;setForm(f=>({...f,aging,pairing:f.pairingSource==='web'?f.pairing:pairingSuggestion(f.type,f.grapes,aging),pairingSource:f.pairingSource==='web'?'web':(pairingSuggestion(f.type,f.grapes,aging)?'sugerencia':'')}));}}>{agingOptions.map(x=><option key={x}>{x}</option>)}</select></Field>
+      <Field label="Uva / variedades"><input value={form.grapes.join(', ')} onChange={e=>{const grapes=normalizeGrapeList(e.target.value.split(',').map(x=>x.trim()).filter(Boolean));setForm(f=>{const suggested=autoPairingForForm(f.type,grapes,f.aging);return {...f,grapes,pairing:f.pairingSource==='manual'||f.pairingSource==='web'||f.pairingSource==='label'?f.pairing:(suggested||''),pairingSource:f.pairingSource==='manual'||f.pairingSource==='web'||f.pairingSource==='label'?f.pairingSource:(suggested?'sugerencia':'')};});}} placeholder="Tempranillo, Garnacha, Pinot Noir…"/><small className="field-hint">Unificamos sinónimos de la misma uva (por ejemplo, Grenache → Garnacha).</small></Field>
+      <Field label="Envejecimiento"><select value={form.aging} onChange={e=>{const aging=e.target.value as Aging;setForm(f=>{const suggested=autoPairingForForm(f.type,f.grapes,aging);return {...f,aging,pairing:f.pairingSource==='manual'||f.pairingSource==='web'||f.pairingSource==='label'?f.pairing:(suggested||''),pairingSource:f.pairingSource==='manual'||f.pairingSource==='web'||f.pairingSource==='label'?f.pairingSource:(suggested?'sugerencia':'')};});}}>{agingOptions.map(x=><option key={x}>{x}</option>)}</select></Field>
       {form.aging==='Otro'&&<Field label="Envejecimiento / mención"><input value={form.customAging} onChange={e=>setForm(f=>({...f,customAging:e.target.value}))} placeholder="Ej. 18 meses en roble francés"/></Field>}
       <Field label="Denominación / Appellation"><input value={form.denomination} onChange={e=>setForm(f=>({...f,denomination:e.target.value}))} placeholder="Rioja, Bordeaux, Chianti Classico, Napa Valley…"/></Field>
       <div className="two-cols"><Field label="Región"><input value={form.region} onChange={e=>setForm(f=>({...f,region:e.target.value}))} placeholder="Bourgogne, Mendoza…"/></Field><Field label="País"><input value={form.country} onChange={e=>setForm(f=>({...f,country:e.target.value}))} placeholder="España, Francia, Italia…"/></Field></div>
-      <Field label="Maridaje"><div className="pairing-field"><textarea rows={2} value={form.pairing} onChange={e=>setForm(f=>({...f,pairing:e.target.value,pairingSource:e.target.value?'manual':''}))} placeholder="Ej. carnes rojas, arroces y quesos curados"/>{form.pairingSource&&<small className="pairing-source">{form.pairingSource==='web'?'✓ Encontrado en la ficha del vino':'✨ Sugerencia automática según tipo y uva'}</small>}</div></Field>
+      <Field label="Maridaje"><div className="pairing-field"><textarea rows={2} value={form.pairing} onChange={e=>setForm(f=>({...f,pairing:e.target.value,pairingSource:e.target.value?'manual':''}))} placeholder={form.type==='Sin indicar'||form.grapes.length===0?'Se sugerirá al elegir tipo y uva':'Ej. carnes rojas, arroces y quesos curados'}/>{form.pairingSource&&<small className="pairing-source">{form.pairingSource==='web'?'✓ Encontrado en la ficha del vino':form.pairingSource==='label'?'✓ Leído de la etiqueta':'✨ Sugerencia automática según tipo y uva'}</small>}</div></Field>
 
       <div className="compact-section">
         <span className="compact-label">Dónde va</span>
@@ -826,10 +880,28 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
       <Field label="Notas"><div className="notes-input-head"><span>Tu opinión</span><button type="button" className={dictating?'dictate active':'dictate'} onClick={dictate}><Mic size={16}/>{dictating?'Escuchando…':'Dictar'}</button></div><textarea rows={4} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Qué te pareció, con qué lo tomaste…"/></Field>
     </div>}
     <button className="primary save-bottom" onClick={requestSave}>{editing?'Guardar cambios':'Guardar vino'}</button>
-    {catalogOpen&&<CatalogSearchModal initialQuery={catalogInitial} seedImages={catalogSeedImages} fromPhoto={catalogFromPhoto} onClose={()=>setCatalogOpen(false)} onSelect={useImportedWine}/>}
+    {catalogOpen&&<CatalogSearchModal initialQuery={catalogInitial} seedImages={catalogSeedImages} fromPhoto={catalogFromPhoto} onClose={()=>setCatalogOpen(false)} onSelect={useImportedWine}/> }
+    {aiOpen&&<AiAutofillModal busy={photoBusy} onClose={()=>setAiOpen(false)} onUse={useAiAutofill}/>}
     {barcodeOpen&&<BarcodeScannerModal onClose={()=>setBarcodeOpen(false)} onFound={useBarcode}/>}
     {reviewOpen&&<SaveReviewModal form={form} source={autofillSource} onBack={()=>setReviewOpen(false)} onConfirm={()=>{setReviewOpen(false);setReviewNeeded(false);save();}}/>}
   </div>;
+}
+
+
+function AiAutofillModal({busy,onClose,onUse}:{busy:boolean;onClose:()=>void;onUse:(front?:File,back?:File)=>Promise<void>;}) {
+  const [front,setFront]=useState<File>();
+  const [back,setBack]=useState<File>();
+  const [frontPreview,setFrontPreview]=useState('');
+  const [backPreview,setBackPreview]=useState('');
+  const [error,setError]=useState('');
+  useEffect(()=>{let cancelled=false; if(!front){setFrontPreview(''); return;} fileToDataUrl(front).then(url=>{if(!cancelled)setFrontPreview(url);}).catch(()=>{if(!cancelled)setFrontPreview('');}); return ()=>{cancelled=true;};},[front]);
+  useEffect(()=>{let cancelled=false; if(!back){setBackPreview(''); return;} fileToDataUrl(back).then(url=>{if(!cancelled)setBackPreview(url);}).catch(()=>{if(!cancelled)setBackPreview('');}); return ()=>{cancelled=true;};},[back]);
+  async function submit(){
+    if(!front){setError('Necesito al menos la foto delantera.');return;}
+    setError('');
+    try{await onUse(front,back);}catch(e){setError(e instanceof Error?e.message:'No he podido leer las etiquetas.');}
+  }
+  return <div className="modal-backdrop review-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="save-review-modal ai-modal"><div className="modal-handle"/><div className="catalog-head"><div><div className="eyebrow">AUTOFILL CON IA</div><h2>Leer etiquetas</h2></div><button className="icon-button" onClick={onClose}><X/></button></div><p className="catalog-help">Haz una foto clara de la etiqueta delantera y otra de la trasera. La IA rellenará nombre, bodega, añada, tipo, uvas, graduación y lo que vea en la etiqueta. Lo demás lo podéis revisar después.</p><div className="ai-photo-grid"><label className="ai-photo-slot"><div className="ai-photo-preview">{frontPreview?<img src={frontPreview} alt="Etiqueta delantera"/>:<><Camera size={26}/><span>Etiqueta delantera *</span></>}</div><input type="file" accept="image/*" capture="environment" onChange={e=>setFront(e.target.files?.[0])}/><strong>{front?front.name:'Hacer foto frontal'}</strong></label><label className="ai-photo-slot"><div className="ai-photo-preview">{backPreview?<img src={backPreview} alt="Etiqueta trasera"/>:<><Camera size={26}/><span>Etiqueta trasera</span></>}</div><input type="file" accept="image/*" capture="environment" onChange={e=>setBack(e.target.files?.[0])}/><strong>{back?back.name:'Hacer foto trasera'}</strong></label></div>{error&&<div className="catalog-error">{error}</div>}<div className="ai-modal-actions"><button className="ghost-button" type="button" onClick={onClose}>Cancelar</button><button className="primary" type="button" onClick={submit} disabled={busy||!front}>{busy?'Leyendo etiquetas…':'Usar IA para rellenar'}</button></div></article></div>;
 }
 
 
