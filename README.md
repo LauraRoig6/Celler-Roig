@@ -26,3 +26,6 @@ npm run build
 ```
 
 El proyecto usa Vite + React + TypeScript y está preparado para desplegarse en Vercel.
+
+## V17.1 · escáner universal
+El lector de códigos ya no depende de `BarcodeDetector`. Usa `@zxing/browser` para leer EAN/UPC directamente desde la cámara en navegadores móviles modernos (incluidos Safari en iPhone y Chrome en Android) y ofrece además lectura desde una foto y entrada manual como alternativas.

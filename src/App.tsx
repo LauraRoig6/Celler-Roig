@@ -779,45 +779,74 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
 
 function BarcodeScannerModal({onClose,onFound}:{onClose:()=>void;onFound:(code:string)=>void}) {
   const videoRef=useRef<HTMLVideoElement>(null);
-  const streamRef=useRef<MediaStream|null>(null);
+  const controlsRef=useRef<any>(null);
   const foundRef=useRef(false);
   const [error,setError]=useState('');
   const [manual,setManual]=useState('');
   const [starting,setStarting]=useState(true);
+  const [cameraStatus,setCameraStatus]=useState('Preparando lector…');
+  const [imageBusy,setImageBusy]=useState(false);
 
   useEffect(()=>{
-    let timer:number|undefined;
     let cancelled=false;
-    const stop=()=>{streamRef.current?.getTracks().forEach(t=>t.stop());streamRef.current=null;if(timer)window.clearInterval(timer);};
+    const stop=()=>{try{controlsRef.current?.stop?.();}catch{} controlsRef.current=null; const v=videoRef.current; const stream=v?.srcObject as MediaStream|null; stream?.getTracks?.().forEach(t=>t.stop()); if(v)v.srcObject=null;};
     async function start(){
-      const Detector=(window as any).BarcodeDetector;
-      if(!Detector){setError('Este navegador no permite leer códigos directamente. Puedes escribir los números de debajo del código.');setStarting(false);return;}
+      if(!navigator.mediaDevices?.getUserMedia){setStarting(false);setError('Este dispositivo no permite abrir la cámara desde el navegador. Puedes usar una foto del código o escribirlo.');return;}
       try{
-        const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
-        if(cancelled){stream.getTracks().forEach(t=>t.stop());return;}
-        streamRef.current=stream;
-        if(videoRef.current){videoRef.current.srcObject=stream;await videoRef.current.play().catch(()=>{});}
-        const wanted=['ean_13','ean_8','upc_a','upc_e','code_128'];
-        const supported=typeof Detector.getSupportedFormats==='function'?await Detector.getSupportedFormats().catch(()=>wanted):wanted;
-        const formats=wanted.filter(f=>supported.includes(f));
-        const detector=formats.length?new Detector({formats}):new Detector();
+        // ZXing funciona directamente sobre la cámara y no depende de BarcodeDetector,
+        // por lo que sirve como lector común en Safari/iPhone y Chrome/Android.
+        const {BrowserMultiFormatReader}=await import('@zxing/browser');
+        if(cancelled)return;
+        const reader=new BrowserMultiFormatReader();
+        if(!videoRef.current)return;
+        setCameraStatus('Abriendo cámara…');
+        const controls=await reader.decodeFromConstraints(
+          {audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}},
+          videoRef.current,
+          (result,_err,scanControls)=>{
+            if(!result||foundRef.current)return;
+            const raw=String(result.getText?.()||'').replace(/\D/g,'');
+            if(raw.length>=8&&raw.length<=14){
+              foundRef.current=true;
+              try{scanControls?.stop?.();}catch{}
+              controlsRef.current=null;
+              setCameraStatus('Código encontrado ✓');
+              window.setTimeout(()=>onFound(raw),120);
+            }
+          }
+        );
+        if(cancelled){try{controls.stop();}catch{} return;}
+        controlsRef.current=controls;
         setStarting(false);
-        timer=window.setInterval(async()=>{
-          if(foundRef.current||!videoRef.current||videoRef.current.readyState<2)return;
-          try{
-            const codes=await detector.detect(videoRef.current);
-            const raw=String(codes?.[0]?.rawValue||'').replace(/\D/g,'');
-            if(raw.length>=8&&raw.length<=14){foundRef.current=true;stop();onFound(raw);}
-          }catch{}
-        },420);
-      }catch{setStarting(false);setError('No he podido abrir la cámara. Revisa el permiso de cámara o escribe el código manualmente.');}
+        setCameraStatus('Buscando código…');
+      }catch(err:any){
+        if(cancelled)return;
+        setStarting(false);
+        const denied=String(err?.name||'').toLowerCase().includes('notallowed')||String(err?.message||'').toLowerCase().includes('permission');
+        setError(denied?'No tengo permiso para usar la cámara. Activa el permiso de cámara para Celler Roig o usa una foto del código.':'No he podido iniciar el lector. Puedes usar una foto del código o escribir los números.');
+      }
     }
     void start();
     return()=>{cancelled=true;stop();};
   },[]);
 
-  function submitManual(){const code=manual.replace(/\D/g,'');if(code.length<8||code.length>14){setError('El código suele tener entre 8 y 14 números.');return;}foundRef.current=true;streamRef.current?.getTracks().forEach(t=>t.stop());onFound(code);}
-  return <div className="modal-backdrop scanner-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="barcode-modal"><div className="modal-handle"/><div className="catalog-head"><div><div className="eyebrow">AÑADIR RÁPIDO</div><h2>Escanear código</h2></div><button className="icon-button" onClick={onClose}><X/></button></div><p className="catalog-help">Apunta al código de barras de la botella. Celler Roig usará el número para buscar la ficha correcta.</p><div className="barcode-camera"><video ref={videoRef} muted playsInline/><div className="barcode-frame"><span/><span/><span/><span/></div>{starting&&<div className="camera-status">Abriendo cámara…</div>}</div>{error&&<div className="catalog-error">{error}</div>}<div className="barcode-manual"><span>También puedes escribirlo</span><div><input inputMode="numeric" pattern="[0-9]*" value={manual} onChange={e=>setManual(e.target.value.replace(/\D/g,''))} onKeyDown={e=>{if(e.key==='Enter')submitManual()}} placeholder="Ej. 8410869450012"/><button className="primary" onClick={submitManual}>Buscar</button></div></div></article></div>;
+  function finish(code:string){const raw=code.replace(/\D/g,'');if(raw.length<8||raw.length>14){setError('El código suele tener entre 8 y 14 números.');return;}foundRef.current=true;try{controlsRef.current?.stop?.();}catch{} controlsRef.current=null;onFound(raw);}
+  function submitManual(){finish(manual);}
+  async function scanImage(file?:File){
+    if(!file||imageBusy)return;
+    setImageBusy(true);setError('');
+    const url=URL.createObjectURL(file);
+    try{
+      const {BrowserMultiFormatReader}=await import('@zxing/browser');
+      const reader=new BrowserMultiFormatReader();
+      const result=await reader.decodeFromImageUrl(url);
+      const raw=String(result?.getText?.()||'').replace(/\D/g,'');
+      if(raw.length>=8&&raw.length<=14)finish(raw);else setError('He encontrado un código, pero no parece un EAN/UPC válido. Prueba acercando más la cámara.');
+    }catch{setError('No he podido leer el código de esa foto. Intenta que ocupe casi toda la imagen y que se vea nítido.');}
+    finally{URL.revokeObjectURL(url);setImageBusy(false);}
+  }
+
+  return <div className="modal-backdrop scanner-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="barcode-modal"><div className="modal-handle"/><div className="catalog-head"><div><div className="eyebrow">AÑADIR RÁPIDO</div><h2>Escanear código</h2></div><button className="icon-button" onClick={onClose}><X/></button></div><p className="catalog-help">Apunta al código de barras de la botella. Funciona con la cámara del iPhone y Android sin depender del lector nativo del navegador.</p><div className="barcode-camera"><video ref={videoRef} muted playsInline/><div className="barcode-frame"><span/><span/><span/><span/></div><div className="camera-status">{starting?'Preparando lector…':cameraStatus}</div></div>{error&&<div className="catalog-error">{error}</div>}<div className="barcode-fallbacks"><label className="secondary barcode-photo"><Camera size={17}/>{imageBusy?'Leyendo foto…':'Fotografiar código'}<input type="file" accept="image/*" capture="environment" onChange={e=>{void scanImage(e.target.files?.[0]);e.currentTarget.value='';}}/></label><label className="ghost-button barcode-photo"><ImagePlus size={17}/> Elegir foto<input type="file" accept="image/*" onChange={e=>{void scanImage(e.target.files?.[0]);e.currentTarget.value='';}}/></label></div><div className="barcode-manual"><span>También puedes escribirlo</span><div><input inputMode="numeric" pattern="[0-9]*" value={manual} onChange={e=>setManual(e.target.value.replace(/\D/g,''))} onKeyDown={e=>{if(e.key==='Enter')submitManual()}} placeholder="Ej. 8410869450012"/><button className="primary" onClick={submitManual}>Buscar</button></div></div></article></div>;
 }
 
 function SaveReviewModal({form,source,onBack,onConfirm}:{form:EditableWine;source:string;onBack:()=>void;onConfirm:()=>void}) {
