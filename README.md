@@ -1,31 +1,24 @@
-# Celler Roig · V17
+# Celler Roig v18
 
 Vinoteca personal mobile-first de Pedro.
 
-## Novedades V17
+## Cambios principales
 
-- **Escáner de código de barras (EAN/UPC)** pensado para Android/Chrome. Al detectar el código, Celler Roig intenta resolver qué vino es y abre la misma búsqueda visual de fichas y botellas. Si el navegador no soporta el escáner, se puede escribir el código manualmente.
-- **Confirmación inteligente antes de guardar** los vinos que se hayan autorrellenado: revisa Nombre, Añada, Tipo, Denominación y Uvas, y marca claramente lo que falte o sea dudoso.
-- **Mejor gestión de imágenes**: las imágenes elegidas de Internet se descargan, redimensionan y comprimen antes de guardarse con la ficha. Cuando el fondo blanco de catálogo se puede eliminar con seguridad, se conserva transparencia; si no, se guarda una copia WebP ligera. Así dependemos menos de URLs externas.
-- **Mejor rendimiento y sincronización**: móvil y PC consultan cada 15 s solo una marca ligera de cambios en Neon. La colección completa (incluidas imágenes) solo se descarga cuando realmente ha cambiado. Las imágenes usan carga diferida.
-- El Service Worker ya **no cachea las APIs**, evitando respuestas antiguas de sincronización.
-- `Por probar → Consultar vinos` añade **Wine-Searcher, Decanter, Decántalo y Vinissimus** a Vivino, Bodeboca, Guía Peñín, Petit Celler, CellarTracker y Vinatis.
-- La búsqueda interna también considera Wine-Searcher, Decanter, Guía Peñín y CellarTracker como fuentes relevantes además de las vinotecas ya priorizadas.
+- **Buscador de vino más completo:** la foto y los datos ya no dependen de la misma tienda. Celler Roig busca resultados y después intenta completar la ficha combinando varias fuentes especializadas (especialmente Decántalo, Bodeboca, Vinissimus, Vinatis, Petit Celler, Vila Viniteca, Vivino, Wine-Searcher y Verema).
+- **Lista de deseos independiente:** un vino puede estar en `Probados` y, a la vez, en `Lista de deseos` si Pedro quiere volver a comprarlo. En la ficha aparece un botón de marcador para añadirlo o quitarlo de deseos.
+- **Sin zoom accidental:** se bloquea el zoom general de la interfaz para evitar pellizcos involuntarios en móvil.
+- **Imagen ampliable:** al tocar la botella dentro de su ficha, la foto se abre a pantalla grande.
+- **Fuentes de consulta:** se añaden Vila Viniteca y Verema a la pestaña `Lista de deseos → Consultar vinos`.
+- Se mantiene el escáner de códigos ZXing compatible con iPhone/Safari y Android/Chrome.
 
-## Variables de entorno en Vercel
+## Variables de Vercel
 
-- `DATABASE_URL` → Neon PostgreSQL.
-- `SERPER_API_KEY` → búsqueda escrita / por código de botellas y fichas.
-- `SERPAPI_API_KEY` → búsqueda por foto con Google Lens (opcional si se mantiene esa vía).
+No cambia ninguna variable:
 
-## Desarrollo
+- `DATABASE_URL`
+- `SERPER_API_KEY`
+- `SERPAPI_API_KEY` (solo para búsqueda por foto/Lens)
 
-```bash
-npm install
-npm run build
-```
+## Despliegue
 
-El proyecto usa Vite + React + TypeScript y está preparado para desplegarse en Vercel.
-
-## V17.2 · escáner universal
-El lector de códigos ya no depende de `BarcodeDetector`. Usa `@zxing/browser` para leer EAN/UPC directamente desde la cámara en navegadores móviles modernos (incluidos Safari en iPhone y Chrome en Android) y ofrece además lectura desde una foto y entrada manual como alternativas.
+Sube el contenido de este ZIP a la raíz del repositorio de GitHub. Vercel detectará el cambio y desplegará automáticamente.

@@ -1,52 +1,55 @@
 const APPELLATIONS = [
-  { name: 'Ribera del Duero', region: 'Castilla y León', aliases: ['ribera del duero'] },
-  { name: 'Rioja', region: 'La Rioja', aliases: ['doca rioja','d.o.c.a. rioja','denominación de origen calificada rioja','rioja'] },
-  { name: 'Rueda', region: 'Castilla y León', aliases: ['do rueda','d.o. rueda','rueda'] },
-  { name: 'Toro', region: 'Castilla y León', aliases: ['do toro','d.o. toro','toro'] },
-  { name: 'Priorat', region: 'Cataluña', aliases: ['doca priorat','doq priorat','priorat'] },
-  { name: 'Rías Baixas', region: 'Galicia', aliases: ['rías baixas','rias baixas'] },
-  { name: 'Ribeiro', region: 'Galicia', aliases: ['do ribeiro','ribeiro'] },
-  { name: 'Valdeorras', region: 'Galicia', aliases: ['valdeorras'] },
-  { name: 'Monterrei', region: 'Galicia', aliases: ['monterrei'] },
-  { name: 'Jumilla', region: 'Región de Murcia', aliases: ['do jumilla','jumilla'] },
-  { name: 'Yecla', region: 'Región de Murcia', aliases: ['do yecla','yecla'] },
-  { name: 'Bullas', region: 'Región de Murcia', aliases: ['do bullas','bullas'] },
-  { name: 'Alicante', region: 'Comunitat Valenciana', aliases: ['do alicante','alicante dop','alicante d.o.'] },
-  { name: 'Valencia', region: 'Comunitat Valenciana', aliases: ['do valencia','valencia dop','d.o. valencia'] },
-  { name: 'Utiel-Requena', region: 'Comunitat Valenciana', aliases: ['utiel-requena','utiel requena'] },
-  { name: 'Cava', region: 'España', aliases: ['do cava','d.o. cava','cava'] },
-  { name: 'Penedès', region: 'Cataluña', aliases: ['penedès','penedes'] },
-  { name: 'Montsant', region: 'Cataluña', aliases: ['montsant'] },
-  { name: 'Empordà', region: 'Cataluña', aliases: ['empordà','emporda'] },
-  { name: 'Costers del Segre', region: 'Cataluña', aliases: ['costers del segre'] },
-  { name: 'Terra Alta', region: 'Cataluña', aliases: ['terra alta'] },
-  { name: 'Pla de Bages', region: 'Cataluña', aliases: ['pla de bages'] },
-  { name: 'Navarra', region: 'Navarra', aliases: ['do navarra','navarra dop','d.o. navarra'] },
-  { name: 'Somontano', region: 'Aragón', aliases: ['somontano'] },
-  { name: 'Cariñena', region: 'Aragón', aliases: ['cariñena','carinena'] },
-  { name: 'Calatayud', region: 'Aragón', aliases: ['calatayud'] },
-  { name: 'Campo de Borja', region: 'Aragón', aliases: ['campo de borja'] },
-  { name: 'La Mancha', region: 'Castilla-La Mancha', aliases: ['do la mancha','la mancha dop','d.o. la mancha'] },
-  { name: 'Valdepeñas', region: 'Castilla-La Mancha', aliases: ['valdepeñas','valdepenas'] },
-  { name: 'Manchuela', region: 'Castilla-La Mancha', aliases: ['manchuela'] },
-  { name: 'Almansa', region: 'Castilla-La Mancha', aliases: ['almansa'] },
-  { name: 'Méntrida', region: 'Castilla-La Mancha', aliases: ['méntrida','mentrida'] },
-  { name: 'Vinos de Madrid', region: 'Comunidad de Madrid', aliases: ['vinos de madrid'] },
-  { name: 'Bierzo', region: 'Castilla y León', aliases: ['bierzo'] },
-  { name: 'Cigales', region: 'Castilla y León', aliases: ['cigales'] },
-  { name: 'Arlanza', region: 'Castilla y León', aliases: ['arlanza'] },
-  { name: 'Arribes', region: 'Castilla y León', aliases: ['arribes'] },
-  { name: 'Tierra del Vino de Zamora', region: 'Castilla y León', aliases: ['tierra del vino de zamora'] },
-  { name: 'Málaga', region: 'Andalucía', aliases: ['do málaga','do malaga','málaga dop','malaga dop'] },
-  { name: 'Montilla-Moriles', region: 'Andalucía', aliases: ['montilla-moriles','montilla moriles'] },
-  { name: 'Jerez-Xérès-Sherry', region: 'Andalucía', aliases: ['jerez-xérès-sherry','jerez xeres sherry','sherry','jerez'] },
+  { name: 'Ribera del Duero', region: 'Castilla y León', country:'España', aliases: ['ribera del duero'] },
+  { name: 'Rioja', region: 'La Rioja', country:'España', aliases: ['doca rioja','d.o.c.a. rioja','denominación de origen calificada rioja','rioja'] },
+  { name: 'Rueda', region: 'Castilla y León', country:'España', aliases: ['do rueda','d.o. rueda','rueda'] },
+  { name: 'Toro', region: 'Castilla y León', country:'España', aliases: ['do toro','d.o. toro','toro'] },
+  { name: 'Priorat', region: 'Cataluña', country:'España', aliases: ['doca priorat','doq priorat','priorat'] },
+  { name: 'Rías Baixas', region: 'Galicia', country:'España', aliases: ['rías baixas','rias baixas'] },
+  { name: 'Ribeiro', region: 'Galicia', country:'España', aliases: ['do ribeiro','ribeiro'] },
+  { name: 'Valdeorras', region: 'Galicia', country:'España', aliases: ['valdeorras'] },
+  { name: 'Jumilla', region: 'Región de Murcia', country:'España', aliases: ['do jumilla','jumilla'] },
+  { name: 'Alicante', region: 'Comunitat Valenciana', country:'España', aliases: ['do alicante','alicante dop','alicante d.o.'] },
+  { name: 'Valencia', region: 'Comunitat Valenciana', country:'España', aliases: ['do valencia','valencia dop','d.o. valencia'] },
+  { name: 'Utiel-Requena', region: 'Comunitat Valenciana', country:'España', aliases: ['utiel-requena','utiel requena'] },
+  { name: 'Cava', region: 'España', country:'España', aliases: ['do cava','d.o. cava','cava'] },
+  { name: 'Penedès', region: 'Cataluña', country:'España', aliases: ['penedès','penedes'] },
+  { name: 'Montsant', region: 'Cataluña', country:'España', aliases: ['montsant'] },
+  { name: 'Navarra', region: 'Navarra', country:'España', aliases: ['do navarra','navarra dop','d.o. navarra'] },
+  { name: 'Somontano', region: 'Aragón', country:'España', aliases: ['somontano'] },
+  { name: 'Bierzo', region: 'Castilla y León', country:'España', aliases: ['bierzo'] },
+  { name: 'Jerez-Xérès-Sherry', region: 'Andalucía', country:'España', aliases: ['jerez-xérès-sherry','jerez xeres sherry','sherry','jerez'] },
+  { name: 'Bordeaux', region: 'Bordeaux', country:'Francia', aliases: ['bordeaux','médoc','medoc','saint-émilion','saint emilion','pomerol','pauillac','margaux'] },
+  { name: 'Bourgogne', region: 'Bourgogne', country:'Francia', aliases: ['bourgogne','burgundy','chablis','côte de nuits','cote de nuits','côte de beaune','cote de beaune'] },
+  { name: 'Champagne', region: 'Champagne', country:'Francia', aliases: ['champagne'] },
+  { name: 'Alsace', region: 'Alsace', country:'Francia', aliases: ['alsace'] },
+  { name: 'Côtes du Rhône', region: 'Rhône', country:'Francia', aliases: ['côtes du rhône','cotes du rhone','châteauneuf-du-pape','chateauneuf du pape','hermitage'] },
+  { name: 'Loire', region: 'Val de Loire', country:'Francia', aliases: ['loire','sancerre','pouilly-fumé','pouilly fume','muscadet'] },
+  { name: 'Provence', region: 'Provence', country:'Francia', aliases: ['provence','côtes de provence','cotes de provence'] },
+  { name: 'Chianti Classico', region: 'Toscana', country:'Italia', aliases: ['chianti classico'] },
+  { name: 'Brunello di Montalcino', region: 'Toscana', country:'Italia', aliases: ['brunello di montalcino'] },
+  { name: 'Barolo', region: 'Piemonte', country:'Italia', aliases: ['barolo'] },
+  { name: 'Barbaresco', region: 'Piemonte', country:'Italia', aliases: ['barbaresco'] },
+  { name: 'Prosecco', region: 'Veneto / Friuli', country:'Italia', aliases: ['prosecco'] },
+  { name: 'Amarone della Valpolicella', region: 'Veneto', country:'Italia', aliases: ['amarone della valpolicella','amarone'] },
+  { name: 'Douro', region: 'Douro', country:'Portugal', aliases: ['douro'] },
+  { name: 'Vinho Verde', region: 'Minho', country:'Portugal', aliases: ['vinho verde'] },
+  { name: 'Dão', region: 'Dão', country:'Portugal', aliases: ['dão','dao'] },
+  { name: 'Porto', region: 'Douro', country:'Portugal', aliases: ['porto','port wine'] },
+  { name: 'Napa Valley', region: 'California', country:'Estados Unidos', aliases: ['napa valley','napa'] },
+  { name: 'Sonoma', region: 'California', country:'Estados Unidos', aliases: ['sonoma'] },
+  { name: 'Mendoza', region: 'Mendoza', country:'Argentina', aliases: ['mendoza'] },
+  { name: 'Valle de Uco', region: 'Mendoza', country:'Argentina', aliases: ['uco valley','valle de uco'] },
+  { name: 'Maipo Valley', region: 'Valle Central', country:'Chile', aliases: ['maipo valley','valle del maipo','maipo'] },
+  { name: 'Colchagua Valley', region: 'Valle Central', country:'Chile', aliases: ['colchagua valley','valle de colchagua','colchagua'] },
+  { name: 'Mosel', region: 'Mosel', country:'Alemania', aliases: ['mosel'] },
+  { name: 'Rheingau', region: 'Rheingau', country:'Alemania', aliases: ['rheingau'] },
+  { name: 'Marlborough', region: 'Marlborough', country:'Nueva Zelanda', aliases: ['marlborough'] },
+  { name: 'Barossa Valley', region: 'South Australia', country:'Australia', aliases: ['barossa valley','barossa'] },
 ];
 
 const GRAPES = [
-  'Tempranillo','Tinta del País','Tinto Fino','Garnacha','Garnacha Tinta','Garnacha Blanca','Graciano','Mazuelo','Cariñena',
-  'Monastrell','Bobal','Albariño','Verdejo','Godello','Mencía','Treixadura','Loureiro','Macabeo','Viura','Xarel·lo','Xarel-lo','Parellada',
-  'Moscatel','Airén','Malvasía','Palomino','Pedro Ximénez','Cabernet Sauvignon','Cabernet Franc','Merlot','Syrah','Shiraz','Pinot Noir',
-  'Chardonnay','Sauvignon Blanc','Riesling','Gewürztraminer','Chenin Blanc','Petit Verdot','Alicante Bouschet','Maturana Tinta'
+  'Tempranillo','Tinta del País','Tinto Fino','Garnacha','Garnacha Tinta','Garnacha Blanca','Graciano','Mazuelo','Cariñena','Monastrell','Bobal','Albariño','Verdejo','Godello','Mencía','Treixadura','Loureiro','Macabeo','Viura','Xarel·lo','Xarel-lo','Parellada','Moscatel','Airén','Malvasía','Palomino','Pedro Ximénez',
+  'Cabernet Sauvignon','Cabernet Franc','Merlot','Syrah','Shiraz','Pinot Noir','Chardonnay','Sauvignon Blanc','Riesling','Gewürztraminer','Chenin Blanc','Petit Verdot','Alicante Bouschet','Maturana Tinta','Malbec','Sangiovese','Nebbiolo','Barbera','Corvina','Rondinella','Pinot Grigio','Glera','Touriga Nacional','Touriga Franca','Tinta Roriz','Carmenère','Carmenere','Zinfandel','Grenache','Mourvèdre','Mourvedre','Viognier','Gamay','Sémillon','Semillon','Chasselas','Grüner Veltliner','Gruner Veltliner'
 ];
 
 function decodeEntities(s = '') {
@@ -112,6 +115,12 @@ function pairValue(pairs, aliases) {
   }
   return '';
 }
+function bodyField(text='', labels='', stops='') {
+  const safeStops = stops || 'Alcohol|Variedades|Uvas|Bodega|Denominación|Denominacion|Zona de elaboración|Zona de elaboracion|Maridaje|Servicio|Volumen|Precio|Añada|Anada|Envejecimiento|Notas de cata|Sobre';
+  const re = new RegExp(`(?:${labels})\\s*[:\\-]?\\s*(.{2,220}?)(?=\\s(?:${safeStops})\\b|$)`, 'i');
+  const m = String(text).match(re);
+  return m ? String(m[1]).replace(/\\s+/g,' ').trim() : '';
+}
 function additionalPropertyMap(product) {
   const out = [];
   const values = Array.isArray(product?.additionalProperty) ? product.additionalProperty : product?.additionalProperty ? [product.additionalProperty] : [];
@@ -143,13 +152,13 @@ function inferAging(text) {
 function inferAppellation(text) {
   const t = text.toLowerCase();
   for (const item of APPELLATIONS) {
-    if (item.aliases.some(a => t.includes(a.toLowerCase()))) return { denomination: item.name, region: item.region, protection: 'DOP' };
+    if (item.aliases.some(a => t.includes(a.toLowerCase()))) return { denomination: item.name, region: item.region, country:item.country, protection: item.country==='España' ? 'DOP' : 'Sin indicación' };
   }
   const igp = t.match(/(?:igp|i\.g\.p\.|vino de la tierra)\s*(?:de\s*)?([a-záéíóúüñ\- ]{3,50})/i);
-  if (igp) return { denomination: igp[1].trim().replace(/\s{2,}/g,' '), region: '', protection: 'IGP' };
-  if (/\bigp\b|i\.g\.p\.|vino de la tierra/.test(t)) return { denomination: '', region: '', protection: 'IGP' };
-  if (/denominación de origen|denominacion de origen|\bd\.o\.\b|\bdo\b|\bdop\b/.test(t)) return { denomination: '', region: '', protection: 'DOP' };
-  return { denomination: '', region: '', protection: 'Sin indicación' };
+  if (igp) return { denomination: igp[1].trim().replace(/\s{2,}/g,' '), region: '', country:'España', protection: 'IGP' };
+  if (/\bigp\b|i\.g\.p\.|vino de la tierra/.test(t)) return { denomination: '', region: '', country:'España', protection: 'IGP' };
+  if (/denominación de origen|denominacion de origen|\bd\.o\.\b|\bdo\b|\bdop\b/.test(t)) return { denomination: '', region: '', country:'España', protection: 'DOP' };
+  return { denomination: '', region: '', country:'', protection: 'Sin indicación' };
 }
 const GRAPE_ALIASES={grenache:'Garnacha',garnatxa:'Garnacha','garnacha tinta':'Garnacha',shiraz:'Syrah','pinot grigio':'Pinot Gris',mourvedre:'Monastrell','mourvèdre':'Monastrell',mataro:'Monastrell','tinto fino':'Tempranillo','tinta del pais':'Tempranillo','tinta del país':'Tempranillo',cencibel:'Tempranillo','tinta roriz':'Tempranillo',viura:'Macabeo',carmenere:'Carmenère',semillon:'Sémillon','gruner veltliner':'Grüner Veltliner'};
 function canonicalGrape(value=''){const clean=String(value).trim().replace(/\s+/g,' ');return GRAPE_ALIASES[normalizedLabel(clean)]||clean;}
@@ -243,16 +252,16 @@ export default async function handler(req, res) {
     const description = asName(product.description) || meta(html,'og:description') || meta(html,'description');
     const bodyText = stripHtml(html);
     const pairs = [...additionalPropertyMap(product), ...extractPairs(html)];
-    const grapePair = pairValue(pairs, ['uva','uvas','variedad','variedades','variedad de uva','variedades de uva','grape','grapes']);
-    const denominationPair = pairValue(pairs, ['denominacion de origen','denominación de origen','dop','d.o.','do','igp','indicacion geografica','indicación geográfica']);
-    const wineryPair = pairValue(pairs, ['bodega','productor','elaborador','winery','producer','marca']);
+    const grapePair = pairValue(pairs, ['uva','uvas','variedad','variedades','variedad de uva','variedades de uva','grape','grapes']) || bodyField(bodyText,'Variedades?|Uvas?|Grapes?','Alcohol|Bodega|Denominación|Denominacion|Zona de elaboración|Zona de elaboracion|Servicio|Volumen|Maridaje|Notas de cata|Sobre');
+    const denominationPair = pairValue(pairs, ['denominacion de origen','denominación de origen','dop','d.o.','do','igp','indicacion geografica','indicación geográfica']) || bodyField(bodyText,'Denominación de origen|Denominacion de origen|Appellation','Bodega|Variedades|Uvas|Alcohol|Zona de elaboración|Zona de elaboracion|Servicio|Volumen|Maridaje|Notas de cata|Sobre');
+    const wineryPair = pairValue(pairs, ['bodega','productor','elaborador','winery','producer','marca']) || bodyField(bodyText,'Bodega|Productor|Producer|Winery','Variedades|Uvas|Alcohol|Denominación|Denominacion|Zona de elaboración|Zona de elaboracion|Servicio|Volumen|Maridaje|Notas de cata|Sobre');
     const agingPair = pairValue(pairs, ['envejecimiento','crianza','maduracion','maduración','aging','barrica']);
     const typePair = pairValue(pairs, ['tipo de vino','tipo','wine type']);
-    const alcoholPair = pairValue(pairs, ['graduacion','graduación','alcohol','grado alcoholico','grado alcohólico','% vol']);
+    const alcoholPair = pairValue(pairs, ['graduacion','graduación','alcohol','grado alcoholico','grado alcohólico','% vol']) || bodyField(bodyText,'Alcohol|Graduación|Graduacion','Zona de elaboración|Zona de elaboracion|Denominación|Denominacion|Bodega|Variedades|Uvas|Servicio|Volumen|Maridaje|Notas de cata|Sobre');
     const countryPair = pairValue(pairs, ['pais','país','country']);
     const regionPair = pairValue(pairs, ['region','región','zona','comunidad autonoma','comunidad autónoma']);
     const classificationPair = pairValue(pairs, ['clasificacion','clasificación','classification','appellation','categoria','categoría']);
-    const pairingPair = pairValue(pairs, ['maridaje','maridajes','food pairing','pairing','gastronomia','gastronomía','acompañamiento','acompanamiento','ideal con']);
+    const pairingPair = pairValue(pairs, ['maridaje','maridajes','food pairing','pairing','gastronomia','gastronomía','acompañamiento','acompanamiento','ideal con']) || bodyField(bodyText,'Maridaje|Food pairing|Pairing|Ideal con','Notas de cata|Sobre|Viñedo|Vinedo|Elaboración|Elaboracion|Opinión|Opinion|Temperatura|Envejecimiento');
     const combined = `${hint} ${product.name || ''} ${pageTitle} ${description} ${denominationPair} ${grapePair} ${agingPair} ${typePair} ${bodyText.slice(0, 180000)}`;
     const app = inferAppellation(`${denominationPair} ${combined}`);
 
@@ -266,7 +275,7 @@ export default async function handler(req, res) {
     const aging = inferAging(`${agingPair} ${name} ${description} ${combined.slice(0,50000)}`);
     const alcohol = inferAlcohol(`${alcoholPair} ${description} ${bodyText.slice(0,120000)}`);
     const price = getOfferPrice(product);
-    const country = countryPair || (app.denomination ? 'España' : (/\bespaña\b|\bspain\b/i.test(combined) || url.hostname.endsWith('.es') ? 'España' : ''));
+    const country = countryPair || app.country || (/\bespaña\b|\bspain\b/i.test(combined) ? 'España' : /\bfrance|francia\b/i.test(combined)?'Francia':/\bitaly|italia\b/i.test(combined)?'Italia':/\bportugal\b/i.test(combined)?'Portugal':'');
     const region = app.region || regionPair;
     const classification = classificationPair || (String(denominationPair).match(/\b(AOC|AOP|DOCG|DOCa|DOQ|DOC|AVA|IGP|DOP|IG|GI)\b/i)?.[1] || '');
     const pairing = String(pairingPair || '').replace(/\s+/g,' ').trim().slice(0,180) || pairingPreset(type, grapes, aging);

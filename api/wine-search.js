@@ -1,6 +1,10 @@
 const STOPWORDS = new Set(['vino','wine','botella','bottle','comprar','buy','de','del','la','el','los','las','un','una','y','en','con','the','and']);
 const BLOCKED_HOSTS = ['google.com','google.es','books.google.','earth.google.','support.google.','microsoft.com','bing.com','facebook.com','instagram.com','youtube.com','tiktok.com','pinterest.com','x.com','twitter.com'];
-const TRUSTED_DOMAINS = ['bodeboca.com','vivino.com','petitceller.com','vinoseleccion.com','vinatis.com','decantalo.com','vinissimus.com','lavinia.com','millesima.com','idealwine.com','wine-searcher.com','decanter.com','guiapenin.wine','cellartracker.com'];
+const TRUSTED_DOMAINS = ['decantalo.com','bodeboca.com','vinissimus.com','vinatis.com','petitceller.com','vilaviniteca.es','vivino.com','wine-searcher.com','verema.com','vinoseleccion.com','lavinia.com','millesima.com','idealwine.com','decanter.com','guiapenin.wine','cellartracker.com'];
+const IMAGE_DOMAINS = ['decantalo.com','bodeboca.com','vinissimus.com','vinatis.com','petitceller.com','vilaviniteca.es','vivino.com'];
+const SOURCE_WEIGHT = {
+  'decantalo.com':58,'bodeboca.com':56,'vinissimus.com':52,'vinatis.com':50,'petitceller.com':48,'vilaviniteca.es':47,'vivino.com':42,'wine-searcher.com':38,'verema.com':36,'vinoseleccion.com':34,'decanter.com':30,'cellartracker.com':26
+};
 
 // [denominación, región, país, clasificación habitual, alias]
 const APPELLATIONS = [
@@ -47,6 +51,7 @@ function tokens(query=''){return normalize(query).split(/[^a-z0-9]+/).filter(t=>
 function hostOf(url=''){try{return new URL(url).hostname.replace(/^www\./,'');}catch{return'';}}
 function isBlocked(host=''){return BLOCKED_HOSTS.some(x=>host===x||host.endsWith(`.${x}`)||host.includes(x));}
 function isTrusted(host=''){return TRUSTED_DOMAINS.some(x=>host===x||host.endsWith(`.${x}`));}
+function sourceWeight(host=''){for(const [domain,weight] of Object.entries(SOURCE_WEIGHT)){if(host===domain||host.endsWith(`.${domain}`))return weight;}return 0;}
 function titleCase(text=''){return text.replace(/\b([a-záéíóúüñ])/gi,m=>m.toUpperCase());}
 function cleanQueryName(q=''){return titleCase(q.replace(/\b(19|20)\d{2}\b/g,'').replace(/\s+/g,' ').trim());}
 function explicitType(text=''){
@@ -113,8 +118,8 @@ function inferPairingFromItems(items=[]){
 function inferVintage(text=''){const years=[...String(text).matchAll(/\b(19\d{2}|20\d{2})\b/g)].map(m=>Number(m[1]));return years.find(y=>y>=1900&&y<=new Date().getFullYear()+1);}
 function inferWinery(text=''){const raw=String(text);const m=raw.match(/\b(Bodegas?\s+[A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9&'.-]*(?:\s+[A-ZÁÉÍÓÚÜÑ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9&'.-]*){0,3})\b/);if(m)return m[1].replace(/[|–—].*$/,'').trim();return'';}
 function inferCountry(text=''){const t=normalize(text);const map=[['Francia',['france','francia','french','vin français']],['Italia',['italy','italia','italian']],['Portugal',['portugal','portuguese']],['Estados Unidos',['united states','usa','california','oregon']],['Argentina',['argentina','mendoza']],['Chile',['chile','chileno']],['Alemania',['germany','alemania','deutschland']],['Nueva Zelanda',['new zealand','nueva zelanda']],['Australia',['australia']],['España',['spain','españa','spanish','rioja','ribera del duero']]];for(const[country,aliases]of map)if(aliases.some(a=>t.includes(normalize(a))))return country;return'';}
-function relevance(item,query){const hay=normalize(`${item.title||''} ${item.snippet||''} ${item.link||''}`),qTokens=tokens(query),hits=qTokens.filter(t=>hay.includes(t)),year=qTokens.find(t=>/^(19|20)\d{2}$/.test(t));let score=hits.length*7;const host=hostOf(item.link||item.url||'');if(isTrusted(host))score+=34;if(qTokens[0]&&normalize(item.title||'').includes(qTokens[0]))score+=10;if(/vino|wine|vin |bodega|winery|celler|chateau|château|crianza|reserva|tinto|blanco|rouge|blanc|docg|aoc|ava/.test(hay))score+=5;if(year&&hay.includes(year))score+=7;if(year&&!hay.includes(year))score-=6;return score;}
-function imageRelevance(item,query){const hay=normalize(`${item.title||''} ${item.source||''} ${item.domain||''} ${item.link||''} ${item.imageUrl||''}`),qTokens=tokens(query),nonYear=qTokens.filter(t=>!/^(19|20)\d{2}$/.test(t));const host=hostOf(item.link||'');let score=qTokens.filter(t=>hay.includes(t)).length*7;if(isTrusted(host)||TRUSTED_DOMAINS.some(d=>hay.includes(normalize(d.split('.')[0]))))score+=40;if(nonYear[0]&&hay.includes(nonYear[0]))score+=12;if(/botella|bottle|vino|wine|vin|bodega|winery|chateau|shop/.test(hay))score+=3;if(/\.png(?:\?|$)/i.test(item.imageUrl||''))score+=2;return score;}
+function relevance(item,query){const hay=normalize(`${item.title||''} ${item.snippet||''} ${item.link||''}`),qTokens=tokens(query),hits=qTokens.filter(t=>hay.includes(t)),year=qTokens.find(t=>/^(19|20)\d{2}$/.test(t));let score=hits.length*7;const host=hostOf(item.link||item.url||'');if(isTrusted(host))score+=sourceWeight(host)||34;if(qTokens[0]&&normalize(item.title||'').includes(qTokens[0]))score+=10;if(/vino|wine|vin |bodega|winery|celler|chateau|château|crianza|reserva|tinto|blanco|rouge|blanc|docg|aoc|ava/.test(hay))score+=5;if(year&&hay.includes(year))score+=7;if(year&&!hay.includes(year))score-=6;return score;}
+function imageRelevance(item,query){const hay=normalize(`${item.title||''} ${item.source||''} ${item.domain||''} ${item.link||''} ${item.imageUrl||''}`),qTokens=tokens(query),nonYear=qTokens.filter(t=>!/^(19|20)\d{2}$/.test(t));const host=hostOf(item.link||'');let score=qTokens.filter(t=>hay.includes(t)).length*7;if(isTrusted(host)||TRUSTED_DOMAINS.some(d=>hay.includes(normalize(d.split('.')[0]))))score+=Math.max(40,sourceWeight(host));if(nonYear[0]&&hay.includes(nonYear[0]))score+=12;if(/botella|bottle|vino|wine|vin|bodega|winery|chateau|shop/.test(hay))score+=3;if(/\.png(?:\?|$)/i.test(item.imageUrl||''))score+=2;return score;}
 async function serper(endpoint,body,apiKey){const response=await fetch(`https://google.serper.dev/${endpoint}`,{method:'POST',headers:{'X-API-KEY':apiKey,'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error(`Serper ${response.status}`);return response.json();}
 
 async function lookupBarcode(barcode=''){
@@ -143,10 +148,11 @@ export default async function handler(req,res){
   const barcodeInfo=barcodeMode?await lookupBarcode(barcode):null;
   let q=barcodeInfo?.query||rawQ;
   const siteClause=TRUSTED_DOMAINS.map(d=>`site:${d}`).join(' OR ');
+  const imageSiteClause=IMAGE_DOMAINS.map(d=>`site:${d}`).join(' OR ');
   try{
     const barcodeHint=barcodeMode?` "${barcode}" EAN GTIN`:'';
     const trustedText=`${q}${barcodeHint} (${siteClause})`;
-    const genericText=`${q}${barcodeHint} vino wine ficha técnica technical sheet cépage grape appellation winery`;
+    const genericText=`${q}${barcodeHint} vino wine ficha técnica uvas variedades bodega productor denominación appellation región alcohol maridaje`;
     const [trustedWeb,genericWeb]=await Promise.all([
       serper('search',{q:trustedText,hl:'es',num:16},apiKey).catch(()=>({organic:[]})),
       serper('search',{q:genericText,hl:'es',num:12},apiKey).catch(()=>({organic:[]}))
@@ -164,7 +170,7 @@ export default async function handler(req,res){
     if(barcodeMode&&!barcodeInfo&&q===rawQ&&!organic.length)return res.status(404).json({error:'No he encontrado un vino asociado a este código. Puedes buscarlo por nombre.'});
 
     const [trustedImages,pairingData]=await Promise.all([
-      serper('images',{q:`${q} botella bottle (${siteClause})`,hl:'es',num:24},apiKey).catch(()=>({images:[]})),
+      serper('images',{q:`${q} botella bottle (${imageSiteClause})`,hl:'es',num:24},apiKey).catch(()=>({images:[]})),
       serper('search',{q:`${q} (${siteClause}) maridaje food pairing ideal con`,hl:'es',num:10},apiKey).catch(()=>({organic:[]}))
     ]);
     // Recalculamos relevancia con el nombre resuelto cuando veníamos de un código.
@@ -192,7 +198,7 @@ export default async function handler(req,res){
       images=[...images,...extra.filter(x=>!keys.has(x.imageUrl))].slice(0,12);
     }
     if(barcodeInfo?.imageUrl&&!images.some(x=>x.imageUrl===barcodeInfo.imageUrl))images.push({id:'barcode-image',title:q,imageUrl:barcodeInfo.imageUrl,thumbnailUrl:barcodeInfo.imageUrl,pageUrl:'',source:'Open Food Facts'});
-    return res.status(200).json({wine,images:images.slice(0,12),provider:barcodeMode?'barcode+serper':'serper-trusted',resolvedQuery:q,sources:organic.slice(0,7).map(({score,...x})=>x),preferredDomains:TRUSTED_DOMAINS});
+    return res.status(200).json({wine,images:images.slice(0,12),provider:barcodeMode?'barcode+serper':'serper-trusted',resolvedQuery:q,sources:organic.slice(0,10).map(({score,...x})=>x),preferredDomains:TRUSTED_DOMAINS});
   }catch(error){
     console.error('wine-search error',error);
     return res.status(502).json({error:'No se ha podido buscar el vino ahora mismo. Prueba de nuevo en unos segundos.'});

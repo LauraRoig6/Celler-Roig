@@ -3,7 +3,7 @@ import {
   Archive, Camera, ChevronDown, CirclePlus, Clock3, Gift, Heart, Home, ImagePlus,
   List, Mic, Minus, Pencil, Plus, Search, Settings, SlidersHorizontal, Sparkles,
   Star, Trash2, Undo2, Wine as WineIcon, X, Check, ShoppingBag, GlassWater, GripVertical,
-  ExternalLink, CheckCircle2, Download, Upload, BarChart3, Utensils, ScanBarcode, AlertTriangle,
+  ExternalLink, CheckCircle2, Download, Upload, BarChart3, Utensils, ScanBarcode, AlertTriangle, Bookmark,
 } from 'lucide-react';
 import {
   DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
@@ -76,13 +76,13 @@ function normalizeWine(raw: Partial<Wine>): Wine {
   const legacyTried = raw.tried ?? (raw.status === 'tried' || Boolean(raw.score || raw.notes || raw.rebuy));
   const quantity = Math.max(0, Number(raw.quantity || 0));
   const protection: Protection = raw.protection || 'Sin indicación';
-  const status: WineStatus = legacyWishlist ? 'wishlist' : quantity > 0 ? 'cellar' : 'tried';
+  const status: WineStatus = quantity > 0 ? 'cellar' : legacyTried ? 'tried' : legacyWishlist ? 'wishlist' : (raw.status || 'tried');
   return {
     id: raw.id || crypto.randomUUID(), name: raw.name || '', winery: raw.winery || '', vintage: raw.vintage,
     type: ['Tinto','Blanco','Rosado','Espumoso','Sin indicar'].includes(String(raw.type)) ? raw.type as WineType : 'Sin indicar', grapes: normalizeGrapeList(Array.isArray(raw.grapes) ? raw.grapes : []), aging: raw.aging || 'Sin indicar',
     customAging: raw.customAging || '', protection, classification: raw.classification || (protection === 'Sin indicación' ? '' : protection),
     denomination: raw.denomination || '', region: raw.region || '', country: raw.country || '', alcohol: raw.alcohol,
-    price: raw.price, shop: raw.shop || '', shopContext: raw.shopContext || (legacyWishlist ? 'wishlist' : quantity > 0 ? 'cellar' : 'tried'), quantity, status, tried: Boolean(legacyTried), wishlist: Boolean(legacyWishlist),
+    price: raw.price, shop: raw.shop || '', shopContext: raw.shopContext || (quantity > 0 ? 'cellar' : legacyTried ? 'tried' : legacyWishlist ? 'wishlist' : 'tried'), quantity, status, tried: Boolean(legacyTried), wishlist: Boolean(legacyWishlist),
     favorite: Boolean(raw.favorite), score: raw.score, notes: raw.notes || '', rebuy: raw.rebuy || '', imageUrl: raw.imageUrl || '',
     gifted: Boolean(raw.gifted), openSoon: Boolean(raw.openSoon), pairing: raw.pairing || '', pairingSource: raw.pairingSource || '', giftedBy: raw.giftedBy || '', giftDate: raw.giftDate || '',
     tastings: Array.isArray(raw.tastings) ? raw.tastings : [], lastTastedAt: raw.lastTastedAt,
@@ -201,6 +201,25 @@ function App() {
 
   useEffect(() => { winesRef.current = wines; localStorage.setItem(STORAGE_KEY, JSON.stringify(wines)); }, [wines]);
   useEffect(() => { if (selectedWine) setSelectedWine(wines.find(w => w.id === selectedWine.id) || null); }, [wines]);
+  useEffect(() => {
+    const preventGesture = (event: Event) => {
+      const target = event.target as Element | null;
+      if (target?.closest?.('.image-lightbox')) return;
+      event.preventDefault();
+    };
+    const preventPinch = (event: TouchEvent) => {
+      const target = event.target as Element | null;
+      if (event.touches.length > 1 && !target?.closest?.('.image-lightbox')) event.preventDefault();
+    };
+    document.addEventListener('gesturestart', preventGesture, { passive: false } as AddEventListenerOptions);
+    document.addEventListener('gesturechange', preventGesture, { passive: false } as AddEventListenerOptions);
+    document.addEventListener('touchmove', preventPinch, { passive: false });
+    return () => {
+      document.removeEventListener('gesturestart', preventGesture);
+      document.removeEventListener('gesturechange', preventGesture);
+      document.removeEventListener('touchmove', preventPinch);
+    };
+  }, []);
 
 
   async function pullFromCloud() {
@@ -354,7 +373,7 @@ function App() {
     setWines(next); setSelectedWine(null); setTab('home'); localStorage.setItem(DIRTY_KEY, '1'); void replaceCloud(next);
   }
 
-  const cellarWines = useMemo(() => wines.filter(w => w.quantity > 0 && !w.wishlist), [wines]);
+  const cellarWines = useMemo(() => wines.filter(w => w.quantity > 0), [wines]);
   const triedWines = useMemo(() => wines.filter(w => w.tried), [wines]);
   const wishlist = useMemo(() => wines.filter(w => w.wishlist), [wines]);
   const bottleCount = cellarWines.reduce((n, w) => n + w.quantity, 0);
@@ -381,13 +400,14 @@ function App() {
   }
 
   function formToWine(base?: Wine): Wine {
-    const isWish = form.status === 'wishlist';
+    const isWishOnly = form.status === 'wishlist';
     const isTriedOnly = form.status === 'tried';
-    const quantity = isWish || isTriedOnly ? 0 : Math.max(1, form.quantity);
+    const quantity = isWishOnly || isTriedOnly ? 0 : Math.max(1, form.quantity);
     const tried = isTriedOnly ? true : Boolean(form.tried);
+    const wishlist = Boolean(form.wishlist || isWishOnly);
     return normalizeWine({
-      ...(base || {}), ...form, quantity, wishlist: isWish, tried,
-      status: isWish ? 'wishlist' : quantity > 0 ? 'cellar' : 'tried',
+      ...(base || {}), ...form, quantity, wishlist, tried,
+      status: quantity > 0 ? 'cellar' : tried ? 'tried' : wishlist ? 'wishlist' : 'tried',
       id: base?.id || crypto.randomUUID(), createdAt: base?.createdAt || new Date().toISOString(),
       manualOrder: base?.manualOrder ?? Math.max(-1, ...wines.map(w => w.manualOrder)) + 1,
     });
@@ -398,17 +418,16 @@ function App() {
     if (!editingWine) {
       const duplicate = duplicateOf(form);
       if (duplicate) {
-        if (form.status === 'wishlist' && duplicate.quantity > 0) {
-          alert(`“${duplicate.name}${duplicate.vintage ? ` ${duplicate.vintage}` : ''}” ya está en tu Vinoteca.`);
-          setSelectedWine(duplicate); setTab('cellar'); return;
-        }
         if (confirm(`Ya tienes “${duplicate.name}${duplicate.vintage ? ` ${duplicate.vintage}` : ''}” registrado.\n\n¿Quieres actualizar esa ficha en vez de crear otra?`)) {
+          const nextQuantity = form.status === 'cellar' ? Math.max(1, duplicate.quantity + Math.max(1, form.quantity)) : duplicate.quantity;
+          const nextWishlist = duplicate.wishlist || form.status === 'wishlist';
+          const nextTried = duplicate.tried || form.status === 'tried' || form.tried;
           const updated = normalizeWine({
             ...duplicate,
-            quantity: form.status === 'cellar' ? Math.max(1, duplicate.quantity + Math.max(1, form.quantity)) : duplicate.quantity,
-            wishlist: form.status === 'wishlist' ? true : false,
-            tried: duplicate.tried || form.status === 'tried' || form.tried,
-            status: form.status === 'wishlist' ? 'wishlist' : Math.max(duplicate.quantity, form.quantity) > 0 ? 'cellar' : 'tried',
+            quantity: nextQuantity,
+            wishlist: nextWishlist,
+            tried: nextTried,
+            status: nextQuantity > 0 ? 'cellar' : nextTried ? 'tried' : nextWishlist ? 'wishlist' : 'tried',
           });
           setWines(prev => prev.map(w => w.id === duplicate.id ? updated : w));
           void persistWine(updated);
@@ -424,13 +443,13 @@ function App() {
     if (editingWine) setWines(prev => prev.map(w => w.id === editingWine.id ? wine : w));
     else setWines(prev => [...prev, wine]);
     setSelectedWine(wine); void persistWine(wine);
-    const nextTab: Tab = wine.wishlist ? 'wishlist' : wine.quantity > 0 ? 'cellar' : 'tried';
+    const nextTab: Tab = wine.quantity > 0 ? 'cellar' : wine.tried ? 'tried' : wine.wishlist ? 'wishlist' : 'tried';
     setForm(emptyForm()); setEditingWine(null); setMoreInfo(false); setTab(nextTab);
   }
 
   function startEdit(wine: Wine) {
     const { id: _id, createdAt: _created, manualOrder: _order, ...editable } = wine;
-    setForm({ ...editable, status: wine.wishlist ? 'wishlist' : wine.quantity > 0 ? 'cellar' : 'tried' });
+    setForm({ ...editable, status: wine.quantity > 0 ? 'cellar' : wine.tried ? 'tried' : 'wishlist' });
     setEditingWine(wine); setSelectedWine(null); setMoreInfo(true); setTab('add');
   }
 
@@ -462,7 +481,7 @@ function App() {
     if (undoTimer.current) window.clearTimeout(undoTimer.current);
     setUndoDrink(wine);
     const nextQty = Math.max(0, wine.quantity - 1);
-    patchWine(wine.id, { quantity: nextQty, tried: true, wishlist: false, status: nextQty > 0 ? 'cellar' : 'tried', lastTastedAt: new Date().toISOString() });
+    patchWine(wine.id, { quantity: nextQty, tried: true, status: nextQty > 0 ? 'cellar' : 'tried', lastTastedAt: new Date().toISOString() });
     undoTimer.current = window.setTimeout(() => setUndoDrink(null), 6500);
   }
 
@@ -532,7 +551,7 @@ function HomeScreen({ wines, cellar, tried, wishlist, favorites, bottleCount, on
     <section className="stats-grid">
       <button className="stat-card" onClick={() => onGo('cellar')}><strong>{bottleCount}</strong><span>botellas en casa</span></button>
       <button className="stat-card" onClick={() => onGo('tried')}><strong>{tried.length}</strong><span>vinos probados</span></button>
-      <button className="stat-card" onClick={() => onGo('wishlist')}><strong>{wishlist.length}</strong><span>por probar</span></button>
+      <button className="stat-card" onClick={() => onGo('wishlist')}><strong>{wishlist.length}</strong><span>en deseos</span></button>
     </section>
 
     <button className="primary big-action" onClick={onAdd}><CirclePlus size={23}/> Añadir un vino</button>
@@ -613,7 +632,7 @@ function BottleVisual({wine,compact=false}:{wine:Wine;compact?:boolean}) {
 }
 
 function WineCard({wine,onClick}:{wine:Wine;onClick:()=>void}) {
-  return <button className="wine-card" onClick={onClick}><div className="wine-card-image"><BottleVisual wine={wine}/>{wine.favorite&&<span className="heart-float"><Heart size={15} fill="currentColor"/></span>}{wine.gifted&&<span className="gift-float"><Gift size={14}/></span>}</div><strong>{wine.name}</strong><span>{wine.denomination||wine.winery}{wine.vintage?` · ${wine.vintage}`:''}</span><div className="card-bottom"><span>{wine.quantity>0?`${wine.quantity} ${wine.quantity===1?'botella':'botellas'}`:wine.tried?'Probado':'Por probar'}</span>{wine.score&&<b><Star size={13} fill="currentColor"/>{wine.score}</b>}</div></button>;
+  return <button className="wine-card" onClick={onClick}><div className="wine-card-image"><BottleVisual wine={wine}/>{wine.favorite&&<span className="heart-float"><Heart size={15} fill="currentColor"/></span>}{wine.gifted&&<span className="gift-float"><Gift size={14}/></span>}</div><strong>{wine.name}</strong><span>{wine.denomination||wine.winery}{wine.vintage?` · ${wine.vintage}`:''}</span><div className="card-bottom"><span>{wine.quantity>0?`${wine.quantity} ${wine.quantity===1?'botella':'botellas'}`:wine.tried?'Probado':'En deseos'}</span>{wine.score&&<b><Star size={13} fill="currentColor"/>{wine.score}</b>}</div></button>;
 }
 
 function WineListRow({wine,onClick}:{wine:Wine;onClick:()=>void}) {
@@ -656,19 +675,56 @@ const WINE_REFERENCE_SITES = [
   {name:'Decántalo', url:'https://www.decantalo.com/es/es/vino/', note:'Fichas técnicas y catálogo amplio'},
   {name:'Vinissimus', url:'https://www.vinissimus.com/es/vinos/', note:'Catálogo, añadas y fichas de vinos'},
   {name:'Vinatis', url:'https://www.vinatis.com/', note:'Catálogo internacional de vinos'},
+  {name:'Vila Viniteca', url:'https://www.vilaviniteca.es/', note:'Gran catálogo español e internacional'},
+  {name:'Verema', url:'https://www.verema.com/vinos', note:'Base de datos, fichas y valoraciones de aficionados'},
 ] as const;
 
 function WishlistScreen({wines,onOpen,onAdd}:{wines:Wine[];onOpen:(w:Wine)=>void;onAdd:()=>void}) {
   const [section,setSection]=useState<'wishlist'|'consult'>('wishlist');
   return <div className="page wishlist-page">
-    <div className="sticky-head wishlist-sticky"><Header eyebrow="LISTA DE DESEOS" title="Por probar" right={<button className="circle-action" onClick={onAdd}><Plus/></button>}/><p className="page-intro">Vinos que has visto, te han recomendado o quieres comprar algún día.</p></div>
-    <div className="wishlist-tabs" role="tablist" aria-label="Por probar"><button className={section==='wishlist'?'active':''} onClick={()=>setSection('wishlist')}>Lista de deseos</button><button className={section==='consult'?'active':''} onClick={()=>setSection('consult')}>Consultar vinos</button></div>
-    {section==='wishlist' ? (wines.length===0?<EmptyState title="Tu lista está vacía" text="Añade vinos que quieras probar más adelante." action="Añadir vino" onAction={onAdd}/>:<div className="wishlist-grid">{wines.map(w=><button className="wish-card" key={w.id} onClick={()=>onOpen(w)}><div className="wish-image"><BottleVisual wine={w}/></div><div><strong>{w.name}</strong><span>{w.winery}</span>{w.denomination&&<small>{w.denomination}</small>}</div></button>)}</div>) : <section className="consult-wines"><div className="consult-intro"><strong>Consulta otras guías y vinotecas</strong><span>Abre la web que prefieras para buscar fichas, opiniones, puntuaciones o precios.</span></div><div className="reference-grid">{WINE_REFERENCE_SITES.map(site=><a key={site.name} className="reference-card" href={site.url} target="_blank" rel="noreferrer"><div><strong>{site.name}</strong><span>{site.note}</span></div><ExternalLink size={18}/></a>)}</div></section>}
+    <div className="sticky-head wishlist-sticky"><Header eyebrow="TU LISTA" title="Lista de deseos" right={<button className="circle-action" onClick={onAdd}><Plus/></button>}/><p className="page-intro">Vinos que quieres tener en tu vinoteca, tanto si aún no los has probado como si ya sabes que te gustan.</p></div>
+    <div className="wishlist-tabs" role="tablist" aria-label="Lista de deseos"><button className={section==='wishlist'?'active':''} onClick={()=>setSection('wishlist')}>Lista de deseos</button><button className={section==='consult'?'active':''} onClick={()=>setSection('consult')}>Consultar vinos</button></div>
+    {section==='wishlist' ? (wines.length===0?<EmptyState title="Tu lista está vacía" text="Añade vinos que quieras comprar o volver a tener en tu vinoteca." action="Añadir vino" onAction={onAdd}/>:<div className="wishlist-grid">{wines.map(w=><button className="wish-card" key={w.id} onClick={()=>onOpen(w)}><div className="wish-image"><BottleVisual wine={w}/></div><div><strong>{w.name}</strong><span>{w.winery}</span>{w.denomination&&<small>{w.denomination}</small>}{w.tried&&<em className="wish-tried"><Check size={12}/> Ya probado</em>}</div></button>)}</div>) : <section className="consult-wines"><div className="consult-intro"><strong>Consulta otras guías y vinotecas</strong><span>Abre la web que prefieras para buscar fichas, opiniones, puntuaciones o precios.</span></div><div className="reference-grid">{WINE_REFERENCE_SITES.map(site=><a key={site.name} className="reference-card" href={site.url} target="_blank" rel="noreferrer"><div><strong>{site.name}</strong><span>{site.note}</span></div><ExternalLink size={18}/></a>)}</div></section>}
   </div>;
 }
 
 type ImportedWineData={name?:string;winery?:string;vintage?:number;type?:WineType;typeConfidence?:number;grapes?:string[];aging?:Aging;protection?:Protection;classification?:string;denomination?:string;region?:string;country?:string;alcohol?:number;price?:number;imageUrl?:string;sourceUrl?:string;sourceTitle?:string;fieldsFound?:number;categories?:string;rawText?:string;pairing?:string;pairingSource?:string;};
 type WineImageResult={id:string;title:string;imageUrl:string;thumbnailUrl?:string;pageUrl?:string;source?:string;};
+type WineSearchSource={id?:string;title:string;url:string;snippet?:string;source?:string};
+
+function sourceHost(url=''){try{return new URL(url).hostname.replace(/^www\./,'');}catch{return'';}}
+function sourcePriority(url=''){
+  const h=sourceHost(url);
+  const order=['decantalo.com','bodeboca.com','vinissimus.com','vinatis.com','petitceller.com','vilaviniteca.es','vivino.com','wine-searcher.com','verema.com','decanter.com','cellartracker.com'];
+  const i=order.findIndex(d=>h===d||h.endsWith(`.${d}`));
+  return i<0?20:100-i*6;
+}
+function presentWineValue(value:unknown){return value!==undefined&&value!==null&&value!==''&&!(Array.isArray(value)&&value.length===0);}
+function mergeWineSources(base:ImportedWineData|null,candidates:ImportedWineData[]){
+  const ranked=[...candidates].sort((a,b)=>(sourcePriority(b.sourceUrl||'')+(b.fieldsFound||0)*3)-(sourcePriority(a.sourceUrl||'')+(a.fieldsFound||0)*3));
+  const out:ImportedWineData={...(base||{})};
+  const textFields:(keyof ImportedWineData)[]=['winery','denomination','region','country','alcohol','price'];
+  for(const key of textFields){
+    if(presentWineValue(out[key]))continue;
+    const c=ranked.find(x=>presentWineValue(x[key])); if(c)(out as any)[key]=c[key];
+  }
+  if(!out.vintage){const c=ranked.find(x=>x.vintage);if(c)out.vintage=c.vintage;}
+  if(!out.aging||out.aging==='Sin indicar'){const c=ranked.find(x=>x.aging&&x.aging!=='Sin indicar');if(c)out.aging=c.aging;}
+  if((!out.type||out.type==='Sin indicar'||(out.typeConfidence??0)<.8)){
+    const votes=new Map<string,number>();
+    for(const c of ranked){if(c.type&&c.type!=='Sin indicar')votes.set(c.type,(votes.get(c.type)||0)+1);}
+    const winner=[...votes.entries()].sort((a,b)=>b[1]-a[1])[0]; if(winner){out.type=winner[0] as WineType;out.typeConfidence=winner[1]>=2?.95:.8;}
+  }
+  const bestGrapes=ranked.map(c=>normalizeGrapeList(Array.isArray(c.grapes)?c.grapes:[])).sort((a,b)=>b.length-a.length)[0]||[];
+  if(bestGrapes.length>(out.grapes?.length||0))out.grapes=bestGrapes;
+  const webPair=ranked.find(c=>c.pairing&&c.pairingSource==='web');
+  if(webPair?.pairing){out.pairing=webPair.pairing;out.pairingSource='web';}
+  else if(!out.pairing){const c=ranked.find(x=>x.pairing);if(c){out.pairing=c.pairing;out.pairingSource=c.pairingSource;}}
+  const best=ranked[0];
+  if(best){out.sourceUrl=best.sourceUrl||out.sourceUrl;out.sourceTitle=best.sourceTitle||sourceHost(best.sourceUrl||'')||out.sourceTitle;}
+  out.fieldsFound=[out.name,out.winery,out.vintage,out.type&&out.type!=='Sin indicar',out.grapes?.length,out.aging&&out.aging!=='Sin indicar',out.denomination,out.region,out.country,out.alcohol,out.pairing].filter(Boolean).length;
+  return out;
+}
 
 function inferWineType(categories=''):WineType|undefined{const value=categories.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();if(/espumoso|sparkling|champagne|\bcava\b|prosecco/.test(value))return'Espumoso';if(/rosado|rose wine|vin rose|vino rosato|\brosato\b/.test(value))return'Rosado';if(/vino blanco|white wine|vin blanc|bianco|\bblanco\b/.test(value))return'Blanco';if(/vino tinto|red wine|vin rouge|rosso|\btinto\b/.test(value))return'Tinto';return undefined;}
 function inferAgingText(text=''):Aging|undefined{const value=text.toLowerCase();if(value.includes('gran reserva'))return'Gran Reserva';if(/\breserva\b/.test(value))return'Reserva';if(/\bcrianza\b/.test(value))return'Crianza';if(/\broble\b|barrica/.test(value))return'Roble';if(/\bjoven\b/.test(value))return'Joven';return undefined;}
@@ -749,7 +805,7 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
 
       <div className="compact-section">
         <span className="compact-label">Dónde va</span>
-        <div className="choice-grid three compact-choices"><button type="button" className={form.status==='cellar'?'choice active':'choice'} onClick={()=>setForm(f=>({...f,status:'cellar',shopContext:'cellar',wishlist:false,quantity:Math.max(1,f.quantity)}))}>Vinoteca</button><button type="button" className={form.status==='tried'?'choice active':'choice'} onClick={()=>setForm(f=>({...f,status:'tried',shopContext:'tried',wishlist:false,tried:true,quantity:0}))}>Probados</button><button type="button" className={form.status==='wishlist'?'choice active':'choice'} onClick={()=>setForm(f=>({...f,status:'wishlist',shopContext:'wishlist',wishlist:true,quantity:0}))}>Por probar</button></div>
+        <div className="choice-grid three compact-choices"><button type="button" className={form.status==='cellar'?'choice active':'choice'} onClick={()=>setForm(f=>({...f,status:'cellar',shopContext:'cellar',quantity:Math.max(1,f.quantity)}))}>Vinoteca</button><button type="button" className={form.status==='tried'?'choice active':'choice'} onClick={()=>setForm(f=>({...f,status:'tried',shopContext:'tried',tried:true,quantity:0}))}>Probados</button><button type="button" className={form.status==='wishlist'?'choice active':'choice'} onClick={()=>setForm(f=>({...f,status:'wishlist',shopContext:'wishlist',wishlist:true,quantity:0}))}>Lista de deseos</button></div>
       </div>
 
       {form.status==='cellar'&&<>
@@ -862,8 +918,23 @@ function SaveReviewModal({form,source,onBack,onConfirm}:{form:EditableWine;sourc
 }
 
 function CatalogSearchModal({initialQuery,seedImages=[],fromPhoto=false,onClose,onSelect}:{initialQuery:string;seedImages?:WineImageResult[];fromPhoto?:boolean;onClose:()=>void;onSelect:(p:ImportedWineData)=>void}) {
-  const [query,setQuery]=useState(initialQuery);const [images,setImages]=useState<WineImageResult[]>(seedImages);const [foundWine,setFoundWine]=useState<ImportedWineData|null>(null);const [loading,setLoading]=useState(false);const [error,setError]=useState('');const [notConfigured,setNotConfigured]=useState(false);const [processing,setProcessing]=useState('');
-  async function searchCatalog(keepImages=false,override?:string){const q=(override??query).trim();if(!q)return;setLoading(true);setError('');setNotConfigured(false);if(!keepImages)setImages([]);setFoundWine(null);try{const res=await fetch(`/api/wine-search?q=${encodeURIComponent(q)}`);const data=await res.json();if(!res.ok){if(data.code==='SEARCH_NOT_CONFIGURED')setNotConfigured(true);throw new Error(data.error||'No se pudo buscar');}const foundImages=Array.isArray(data.images)?data.images:[];if(!keepImages||images.length===0)setImages(foundImages);setFoundWine(data.wine||null);if(!keepImages&&!foundImages.length)setError('He encontrado información, pero no una foto clara. Prueba con el nombre completo y la añada.');}catch(e){setError(e instanceof Error?e.message:'La búsqueda no está disponible ahora mismo.');}finally{setLoading(false);}}
+  const [query,setQuery]=useState(initialQuery);const [images,setImages]=useState<WineImageResult[]>(seedImages);const [foundWine,setFoundWine]=useState<ImportedWineData|null>(null);const [loading,setLoading]=useState(false);const [error,setError]=useState('');const [notConfigured,setNotConfigured]=useState(false);const [processing,setProcessing]=useState('');const [sourceCount,setSourceCount]=useState(0);
+  async function searchCatalog(keepImages=false,override?:string){
+    const q=(override??query).trim();if(!q)return;setLoading(true);setError('');setNotConfigured(false);setSourceCount(0);if(!keepImages)setImages([]);setFoundWine(null);
+    try{
+      const res=await fetch(`/api/wine-search?q=${encodeURIComponent(q)}`);const data=await res.json();
+      if(!res.ok){if(data.code==='SEARCH_NOT_CONFIGURED')setNotConfigured(true);throw new Error(data.error||'No se pudo buscar');}
+      const foundImages=Array.isArray(data.images)?data.images:[];if(!keepImages||images.length===0)setImages(foundImages);
+      const sources=(Array.isArray(data.sources)?data.sources:[]) as WineSearchSource[];
+      const chosen=[...sources].filter(x=>x?.url).sort((a,b)=>sourcePriority(b.url)-sourcePriority(a.url)).slice(0,5);
+      const imported=await Promise.all(chosen.map(async src=>{try{const r=await fetch(`/api/wine-import?url=${encodeURIComponent(src.url)}&hint=${encodeURIComponent(q)}`);const j=await r.json().catch(()=>({}));return r.ok&&j.wine?j.wine as ImportedWineData:null;}catch{return null;}}));
+      const useful=imported.filter(Boolean) as ImportedWineData[];
+      const combined=mergeWineSources(data.wine||null,useful);
+      setFoundWine(combined);setSourceCount(useful.length);
+      if(!keepImages&&!foundImages.length)setError('He encontrado información, pero no una foto clara. Prueba con el nombre completo y la añada.');
+    }catch(e){setError(e instanceof Error?e.message:'La búsqueda no está disponible ahora mismo.');}
+    finally{setLoading(false);}
+  }
   async function chooseImage(result:WineImageResult){setProcessing(result.id);let wineData=foundWine;try{
     // Si la imagen viene de una ficha real, intentamos leer esa página: suele contener
     // uvas, denominación/appellation, alcohol, envejecimiento y precio con más precisión
@@ -878,7 +949,7 @@ function CatalogSearchModal({initialQuery,seedImages=[],fromPhoto=false,onClose,
           // El tipo detectado por la búsqueda global tiene voto de confianza. Evitamos que
           // una recomendación "rosado" perdida en el HTML de una tienda pise un tinto fiable.
           if(wineData?.type&&((wineData.typeConfidence??0)>=0.8)) delete cleaned.type;
-          wineData={...(wineData||{}),...cleaned} as ImportedWineData;
+          wineData=mergeWineSources(wineData,[cleaned]);
         }
       }catch{}
     }
@@ -889,7 +960,7 @@ function CatalogSearchModal({initialQuery,seedImages=[],fromPhoto=false,onClose,
   function useDataWithoutPhoto(){if(foundWine)onSelect(foundWine);}
   useEffect(()=>{if(seedImages.length){setImages(seedImages);if(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]/.test(initialQuery))void searchCatalog(true,initialQuery);}else if(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]/.test(initialQuery))void searchCatalog(false,initialQuery);},[]);
   const summary=foundWine?[foundWine.vintage?String(foundWine.vintage):'',foundWine.type&&((foundWine.typeConfidence??0)>=0.8)?foundWine.type:'Tipo: revisar',foundWine.aging&&foundWine.aging!=='Sin indicar'?foundWine.aging:'',foundWine.denomination||'',foundWine.country||'',foundWine.grapes?.length?foundWine.grapes.join(', '):'',foundWine.alcohol?`${foundWine.alcohol}% vol.`:'',foundWine.pairing?`Maridaje: ${foundWine.pairing}`:''].filter(Boolean):[];
-  return <div className="modal-backdrop catalog-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="catalog-modal image-first-modal"><div className="modal-handle"/><div className="catalog-head"><div><div className="eyebrow">{fromPhoto?'BÚSQUEDA POR FOTO':'BUSCAR EN INTERNET'}</div><h2>{fromPhoto?'¿Es una de estas?':'¿Cuál es tu vino?'}</h2></div><button className="icon-button" onClick={onClose}><X/></button></div><p className="catalog-help">{fromPhoto?'Hemos usado la foto para identificar el vino. Ahora buscamos sus fotos y ficha en Bodeboca, Vivino, Petit Celler, Vinoselección, Vinatis y otras vinotecas especializadas.':'Buscamos primero en Bodeboca, Vivino, Petit Celler, Vinoselección, Vinatis y otras vinotecas especializadas.'}</p><div className="catalog-search"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void searchCatalog(false)}} placeholder="Ej. Château Margaux 2019"/><button onClick={()=>void searchCatalog(false)} disabled={loading}>{loading?'Buscando…':'Buscar'}</button></div>{error&&<div className="catalog-error">{error}</div>}{notConfigured&&<div className="catalog-setup"><strong>Falta conectar el buscador</strong><span>En Vercel añade <code>SERPER_API_KEY</code> en Environment Variables.</span></div>}{foundWine&&summary.length>0&&<div className="found-data-card"><div><Check size={18}/><strong>Datos encontrados</strong></div><p>{summary.join(' · ')}</p><small>Los podrás corregir antes de guardar.</small></div>}{loading&&<div className="catalog-loading"><div className="search-loader"/><strong>Buscando fichas de vino…</strong><span>Un momento.</span></div>}{!loading&&images.length>0&&<><div className="catalog-section-title image-title"><strong>{fromPhoto?'Coincidencias de la foto':'Elige la botella correcta'}</strong><span>{fromPhoto?'Toca la que coincida con tu botella.':'Las fuentes especializadas aparecen primero.'}</span></div><div className="catalog-image-grid bottle-search-grid">{images.map(img=><button key={img.id} disabled={!!processing} className="catalog-image-choice bottle-choice" onClick={()=>void chooseImage(img)}><div><img src={img.thumbnailUrl||img.imageUrl} alt={img.title||query} loading="lazy" decoding="async"/></div><strong>{img.title||query}</strong><span>{img.source||'Internet'}</span><small>{processing===img.id?'Preparando ficha…':'Elegir esta botella'}</small></button>)}</div></>}{!loading&&foundWine&&images.length===0&&<button className="secondary use-data-only" onClick={useDataWithoutPhoto}><Check size={18}/> Usar los datos sin foto</button>}<div className="catalog-tip"><Search size={18}/><div><strong>¿No sale la correcta?</strong><span>Edita el nombre arriba. La búsqueda escrita sigue priorizando las vinotecas especializadas.</span></div></div></article></div>;
+  return <div className="modal-backdrop catalog-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="catalog-modal image-first-modal"><div className="modal-handle"/><div className="catalog-head"><div><div className="eyebrow">{fromPhoto?'BÚSQUEDA POR FOTO':'BUSCAR EN INTERNET'}</div><h2>{fromPhoto?'¿Es una de estas?':'¿Cuál es tu vino?'}</h2></div><button className="icon-button" onClick={onClose}><X/></button></div><p className="catalog-help">{fromPhoto?'Hemos usado la foto para identificar el vino. Ahora buscamos sus fotos y ficha en Bodeboca, Vivino, Petit Celler, Vinoselección, Vinatis y otras vinotecas especializadas.':'Buscamos el vino en varias fichas especializadas y combinamos los datos más completos. La foto puede venir de una web y las uvas, bodega o maridaje de otra.'}</p><div className="catalog-search"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void searchCatalog(false)}} placeholder="Ej. Château Margaux 2019"/><button onClick={()=>void searchCatalog(false)} disabled={loading}>{loading?'Buscando…':'Buscar'}</button></div>{error&&<div className="catalog-error">{error}</div>}{notConfigured&&<div className="catalog-setup"><strong>Falta conectar el buscador</strong><span>En Vercel añade <code>SERPER_API_KEY</code> en Environment Variables.</span></div>}{foundWine&&summary.length>0&&<div className="found-data-card"><div><Check size={18}/><strong>Datos encontrados</strong></div><p>{summary.join(' · ')}</p><small>{sourceCount>1?`Ficha combinada con ${sourceCount} fuentes. `:''}Los podrás corregir antes de guardar.</small></div>}{loading&&<div className="catalog-loading"><div className="search-loader"/><strong>Buscando y completando la ficha…</strong><span>Contrastando varias fuentes.</span></div>}{!loading&&images.length>0&&<><div className="catalog-section-title image-title"><strong>{fromPhoto?'Coincidencias de la foto':'Elige la botella correcta'}</strong><span>{fromPhoto?'Toca la que coincida con tu botella.':'Elige la foto correcta; los datos se completan aparte con varias fuentes.'}</span></div><div className="catalog-image-grid bottle-search-grid">{images.map(img=><button key={img.id} disabled={!!processing} className="catalog-image-choice bottle-choice" onClick={()=>void chooseImage(img)}><div><img src={img.thumbnailUrl||img.imageUrl} alt={img.title||query} loading="lazy" decoding="async"/></div><strong>{img.title||query}</strong><span>{img.source||'Internet'}</span><small>{processing===img.id?'Preparando ficha…':'Elegir esta botella'}</small></button>)}</div></>}{!loading&&foundWine&&images.length===0&&<button className="secondary use-data-only" onClick={useDataWithoutPhoto}><Check size={18}/> Usar los datos sin foto</button>}<div className="catalog-tip"><Search size={18}/><div><strong>¿No sale la correcta?</strong><span>Edita el nombre arriba. La búsqueda escrita sigue priorizando las vinotecas especializadas.</span></div></div></article></div>;
 }
 
 function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="field"><span>{label}</span>{children}</label>;}
@@ -897,17 +968,18 @@ function ToggleRow({checked,icon,title,subtitle,onChange,tone='wine'}:{checked:b
 
 
 function WineModal({wine,allWines,onOpenWine,onClose,onPatch,onEdit,onDelete,onMoveToCellar,onConsume}:{wine:Wine;allWines:Wine[];onOpenWine:(w:Wine)=>void;onClose:()=>void;onPatch:(id:string,p:Partial<Wine>)=>void;onEdit:(w:Wine)=>void;onDelete:(id:string)=>void;onMoveToCellar:(w:Wine)=>void;onConsume:(w:Wine)=>void;}) {
-  const [showTasting,setShowTasting]=useState(false); const [tasteScore,setTasteScore]=useState<string>(wine.score!=null?String(wine.score):''); const [tasteNotes,setTasteNotes]=useState('');
+  const [showTasting,setShowTasting]=useState(false); const [tasteScore,setTasteScore]=useState<string>(wine.score!=null?String(wine.score):''); const [tasteNotes,setTasteNotes]=useState(''); const [imageOpen,setImageOpen]=useState(false); const pureWishlist=wine.wishlist&&wine.quantity===0&&!wine.tried;
   const similar=allWines.filter(w=>w.id!==wine.id).map(w=>{let score=0;if(w.denomination&&wine.denomination&&w.denomination.toLowerCase()===wine.denomination.toLowerCase())score+=5;if(w.type===wine.type&&wine.type!=='Sin indicar')score+=2;if(w.country&&wine.country&&w.country.toLowerCase()===wine.country.toLowerCase())score+=1;if(w.aging===wine.aging&&wine.aging!=='Sin indicar')score+=1;const shared=w.grapes.some(g=>wine.grapes.some(x=>x.toLowerCase()===g.toLowerCase()));if(shared)score+=4;return{w,score};}).filter(x=>x.score>=4).sort((a,b)=>b.score-a.score).slice(0,3).map(x=>x.w);
-  function addTasting(){const tasting:Tasting={id:crypto.randomUUID(),date:new Date().toISOString(),score:tasteScore?Math.min(10,Math.max(0,Number(tasteScore))):undefined,notes:tasteNotes.trim()};const list=[...(wine.tastings||[]),tasting];onPatch(wine.id,{tried:true,wishlist:false,status:wine.quantity>0?'cellar':'tried',score:tasting.score??wine.score,notes:tasting.notes||wine.notes,tastings:list,lastTastedAt:tasting.date});setShowTasting(false);setTasteNotes('');}
-  return <div className="modal-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="wine-modal"><div className="modal-handle"/><div className="modal-top"><button className="icon-button" onClick={onClose}><X/></button><button className="icon-button" onClick={()=>onEdit(wine)}><Pencil/></button></div><div className="modal-hero"><div className="modal-bottle"><BottleVisual wine={wine}/></div><div className="modal-title"><span>{wine.denomination||wine.country||wine.type}</span><h2>{wine.name}</h2><p>{wine.winery}{wine.vintage?` · ${wine.vintage}`:''}</p><div className="modal-badges">{wine.gifted&&<span><Gift size={14}/> Regalo</span>}{wine.tried&&<span><Check size={14}/> Probado</span>}</div><div className="quick-flags"><button className={wine.favorite?'flag-icon-button active':'flag-icon-button'} onClick={()=>onPatch(wine.id,{favorite:!wine.favorite})} aria-label={wine.favorite?'Quitar de favoritos':'Marcar como favorito'} title="Favorito"><Heart size={20} fill={wine.favorite?'currentColor':'none'}/></button><button className={wine.openSoon?'flag-icon-button active':'flag-icon-button'} onClick={()=>onPatch(wine.id,{openSoon:!wine.openSoon})} aria-label={wine.openSoon?'Quitar de abrir pronto':'Marcar para abrir pronto'} title="Abrir pronto"><Clock3 size={20}/></button></div></div></div>
-    {wine.wishlist?<div className="wishlist-actions-modal"><button className="primary modal-main-action" onClick={()=>onMoveToCellar(wine)}><ShoppingBag size={20}/> Ya lo tengo</button><button className="secondary modal-main-action" onClick={()=>onPatch(wine.id,{wishlist:false,tried:true,status:'tried',quantity:0,lastTastedAt:new Date().toISOString()})}><CheckCircle2 size={20}/> Ya lo he probado</button></div>:<><div className="score-stock"><div><span>Tu nota</span><strong>{wine.score??'—'}<small>/10</small></strong></div><div><span>En casa</span><strong>{wine.quantity}<small>{wine.quantity===1?' botella':' botellas'}</small></strong></div></div>{wine.quantity>0&&<div className="modal-actions"><div className="qty-control"><button onClick={()=>onPatch(wine.id,{quantity:Math.max(0,wine.quantity-1),status:wine.quantity<=1?'tried':'cellar',tried:wine.quantity<=1?true:wine.tried})}><Minus/></button><strong>{wine.quantity}</strong><button onClick={()=>onPatch(wine.id,{quantity:wine.quantity+1,status:'cellar',wishlist:false})}><Plus/></button></div><button className="primary drink-button" onClick={()=>onConsume(wine)}><GlassWater size={19}/> He bebido una</button></div>}<button className="secondary tasting-action" onClick={()=>setShowTasting(!showTasting)}><Star size={18}/>{wine.tried?'Registrar otra cata':'Marcar como probado'}</button>{showTasting&&<div className="tasting-editor"><div className="two-cols"><Field label="Nota (0–10)"><input type="number" min="0" max="10" step="0.1" value={tasteScore} onChange={e=>setTasteScore(e.target.value)}/></Field><Field label="Fecha"><input type="text" value={new Date().toLocaleDateString('es-ES')} readOnly/></Field></div><Field label="Comentario"><textarea rows={3} value={tasteNotes} onChange={e=>setTasteNotes(e.target.value)} placeholder="Qué te ha parecido…"/></Field><button className="primary" onClick={addTasting}>Guardar cata</button></div>}</>}
+  function addTasting(){const tasting:Tasting={id:crypto.randomUUID(),date:new Date().toISOString(),score:tasteScore?Math.min(10,Math.max(0,Number(tasteScore))):undefined,notes:tasteNotes.trim()};const list=[...(wine.tastings||[]),tasting];onPatch(wine.id,{tried:true,status:wine.quantity>0?'cellar':'tried',score:tasting.score??wine.score,notes:tasting.notes||wine.notes,tastings:list,lastTastedAt:tasting.date});setShowTasting(false);setTasteNotes('');}
+  return <div className="modal-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="wine-modal"><div className="modal-handle"/><div className="modal-top"><button className="icon-button" onClick={onClose}><X/></button><button className="icon-button" onClick={()=>onEdit(wine)}><Pencil/></button></div><div className="modal-hero"><button className="modal-bottle modal-bottle-zoom" onClick={()=>wine.imageUrl&&setImageOpen(true)} aria-label={wine.imageUrl?'Ampliar imagen de la botella':'Botella sin imagen'}><BottleVisual wine={wine}/></button><div className="modal-title"><span>{wine.denomination||wine.country||wine.type}</span><h2>{wine.name}</h2><p>{wine.winery}{wine.vintage?` · ${wine.vintage}`:''}</p><div className="modal-badges">{wine.gifted&&<span><Gift size={14}/> Regalo</span>}{wine.tried&&<span><Check size={14}/> Probado</span>}{wine.wishlist&&<span><Bookmark size={14}/> En deseos</span>}</div><div className="quick-flags"><button className={wine.favorite?'flag-icon-button active':'flag-icon-button'} onClick={()=>onPatch(wine.id,{favorite:!wine.favorite})} aria-label={wine.favorite?'Quitar de favoritos':'Marcar como favorito'} title="Favorito"><Heart size={20} fill={wine.favorite?'currentColor':'none'}/></button><button className={wine.openSoon?'flag-icon-button active':'flag-icon-button'} onClick={()=>onPatch(wine.id,{openSoon:!wine.openSoon})} aria-label={wine.openSoon?'Quitar de abrir pronto':'Marcar para abrir pronto'} title="Abrir pronto"><Clock3 size={20}/></button>{!pureWishlist&&<button className={wine.wishlist?'flag-icon-button active':'flag-icon-button'} onClick={()=>onPatch(wine.id,{wishlist:!wine.wishlist,status:wine.quantity>0?'cellar':wine.tried?'tried':'wishlist'})} aria-label={wine.wishlist?'Quitar de lista de deseos':'Añadir a lista de deseos'} title="Lista de deseos"><Bookmark size={20} fill={wine.wishlist?'currentColor':'none'}/></button>}</div></div></div>
+    {pureWishlist?<div className="wishlist-actions-modal"><button className="primary modal-main-action" onClick={()=>onMoveToCellar(wine)}><ShoppingBag size={20}/> Ya lo tengo</button><button className="secondary modal-main-action" onClick={()=>onPatch(wine.id,{tried:true,status:'tried',quantity:0,lastTastedAt:new Date().toISOString()})}><CheckCircle2 size={20}/> Ya lo he probado</button></div>:<>{wine.wishlist&&wine.quantity===0&&<button className="primary wishlist-buy-button" onClick={()=>onMoveToCellar(wine)}><ShoppingBag size={19}/> Añadir a mi Vinoteca</button>}<div className="score-stock"><div><span>Tu nota</span><strong>{wine.score??'—'}<small>/10</small></strong></div><div><span>En casa</span><strong>{wine.quantity}<small>{wine.quantity===1?' botella':' botellas'}</small></strong></div></div>{wine.quantity>0&&<div className="modal-actions"><div className="qty-control"><button onClick={()=>onPatch(wine.id,{quantity:Math.max(0,wine.quantity-1),status:wine.quantity<=1?'tried':'cellar',tried:wine.quantity<=1?true:wine.tried})}><Minus/></button><strong>{wine.quantity}</strong><button onClick={()=>onPatch(wine.id,{quantity:wine.quantity+1,status:'cellar'})}><Plus/></button></div><button className="primary drink-button" onClick={()=>onConsume(wine)}><GlassWater size={19}/> He bebido una</button></div>}<button className="secondary tasting-action" onClick={()=>setShowTasting(!showTasting)}><Star size={18}/>{wine.tried?'Registrar otra cata':'Marcar como probado'}</button>{showTasting&&<div className="tasting-editor"><div className="two-cols"><Field label="Nota (0–10)"><input type="number" min="0" max="10" step="0.1" value={tasteScore} onChange={e=>setTasteScore(e.target.value)}/></Field><Field label="Fecha"><input type="text" value={new Date().toLocaleDateString('es-ES')} readOnly/></Field></div><Field label="Comentario"><textarea rows={3} value={tasteNotes} onChange={e=>setTasteNotes(e.target.value)} placeholder="Qué te ha parecido…"/></Field><button className="primary" onClick={addTasting}>Guardar cata</button></div>}</>}
     <div className="details-card"><Info label="Tipo" value={wine.type}/><Info label="Uva / variedades" value={wine.grapes.join(', ')||'—'}/><Info label="Envejecimiento" value={displayAging(wine)}/><Info label="Denominación / Appellation" value={wine.denomination||'—'}/>{wine.region&&<Info label="Región" value={wine.region}/>} {wine.country&&<Info label="País" value={wine.country}/>} {wine.pairing&&<Info label="Maridaje" value={wine.pairing}/>} {wine.price!=null&&<Info label="Precio" value={`${wine.price.toFixed(2)} €`}/>} {wine.shop&&<Info label={shopLabelForStatus(wine.shopContext || (wine.wishlist?'wishlist':wine.quantity>0?'cellar':'tried'))} value={wine.shop}/>} {wine.alcohol!=null&&<Info label="Graduación" value={`${wine.alcohol}% vol.`}/>}</div>
     {wine.gifted&&<div className="gift-card"><Gift size={19}/><div><strong>Esta botella fue un regalo</strong><span>{wine.giftedBy?`De ${wine.giftedBy}`:'Sin indicar quién'}{wine.giftDate?` · ${formatDate(wine.giftDate)}`:''}</span></div></div>}
     {(wine.notes||wine.rebuy)&&<div className="notes-card">{wine.notes&&<><span>Tu opinión</span><p>{wine.notes}</p></>}{wine.rebuy&&<div className="rebuy"><Check size={17}/> Lo compraría otra vez: <b>{wine.rebuy}</b></div>}</div>}
     {wine.tastings?.length>0&&<div className="history-card"><span>Historial de catas</span>{[...wine.tastings].reverse().slice(0,4).map(t=><div key={t.id} className="history-row"><div><Clock3 size={15}/><strong>{formatDate(t.date)}</strong></div>{t.score!=null&&<b>{t.score}/10</b>}{t.notes&&<p>{t.notes}</p>}</div>)}</div>}
     {similar.length>0&&<div className="similar-card"><span>Parecidos en tu colección</span><div className="similar-list">{similar.map(w=><button key={w.id} onClick={()=>onOpenWine(w)}><BottleVisual wine={w} compact/><div><strong>{w.name}</strong><small>{w.denomination||w.grapes[0]||w.type}</small></div></button>)}</div></div>}
     <button className="danger-link" onClick={()=>{if(confirm('¿Eliminar este vino?'))onDelete(wine.id)}}><Trash2 size={17}/> Eliminar vino</button>
+    {imageOpen&&wine.imageUrl&&<div className="image-lightbox" onClick={()=>setImageOpen(false)}><button aria-label="Cerrar imagen" onClick={()=>setImageOpen(false)}><X size={24}/></button><img src={wine.imageUrl} alt={wine.name}/></div>}
   </article></div>;
 }
 
@@ -920,8 +992,8 @@ function SettingsScreen({wines,cloudStatus,onBack,onImport}:{wines:Wine[];cloudS
   const countries=new Set(wines.map(w=>w.country).filter(Boolean)).size;
   const topValue=(values:string[])=>{const counts=new Map<string,number>();values.filter(Boolean).forEach(v=>counts.set(v,(counts.get(v)||0)+1));return [...counts.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||'—';};
   const topDenomination=topValue(wines.map(w=>w.denomination)); const topGrape=topValue(wines.flatMap(w=>w.grapes));
-  function exportCsv(){const esc=(v:unknown)=>`"${String(v??'').replace(/"/g,'""')}"`;const head=['Nombre','Bodega','Añada','Tipo','Uvas','Envejecimiento','Denominación/Appellation','Región','País','Maridaje','Botellas','Probado','Por probar','Regalo','Regalado por','Precio','Dónde lo compré/probé/vi','Graduación','Nota','Volvería a comprar','Notas'];const rows=wines.map(w=>[w.name,w.winery,w.vintage||'',w.type,w.grapes.join(' / '),displayAging(w),w.denomination,w.region,w.country,w.pairing,w.quantity,w.tried?'Sí':'No',w.wishlist?'Sí':'No',w.gifted?'Sí':'No',w.giftedBy,w.price??'',w.shop,w.alcohol??'',w.score??'',w.rebuy,w.notes]);const csv='\uFEFF'+[head,...rows].map(r=>r.map(esc).join(';')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-vinos.csv';a.click();URL.revokeObjectURL(url);}
-  function exportJson(){const blob=new Blob([JSON.stringify({app:'Celler Roig',version:17,exportedAt:new Date().toISOString(),wines},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-copia-seguridad.json';a.click();URL.revokeObjectURL(url);}
+  function exportCsv(){const esc=(v:unknown)=>`"${String(v??'').replace(/"/g,'""')}"`;const head=['Nombre','Bodega','Añada','Tipo','Uvas','Envejecimiento','Denominación/Appellation','Región','País','Maridaje','Botellas','Probado','Lista de deseos','Regalo','Regalado por','Precio','Dónde lo compré/probé/vi','Graduación','Nota','Volvería a comprar','Notas'];const rows=wines.map(w=>[w.name,w.winery,w.vintage||'',w.type,w.grapes.join(' / '),displayAging(w),w.denomination,w.region,w.country,w.pairing,w.quantity,w.tried?'Sí':'No',w.wishlist?'Sí':'No',w.gifted?'Sí':'No',w.giftedBy,w.price??'',w.shop,w.alcohol??'',w.score??'',w.rebuy,w.notes]);const csv='\uFEFF'+[head,...rows].map(r=>r.map(esc).join(';')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-vinos.csv';a.click();URL.revokeObjectURL(url);}
+  function exportJson(){const blob=new Blob([JSON.stringify({app:'Celler Roig',version:18,exportedAt:new Date().toISOString(),wines},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-copia-seguridad.json';a.click();URL.revokeObjectURL(url);}
   async function importJson(file?:File){if(!file)return;try{const data=JSON.parse(await file.text());onImport(Array.isArray(data)?data:data.wines);}catch{alert('No he podido leer esa copia de seguridad.');}}
   return <div className="page settings-page"><Header eyebrow="CELLER ROIG" title="Ajustes" right={<button className="icon-button" onClick={onBack}><X/></button>}/>
     <div className="settings-card"><div className="settings-line"><div><strong>Pedro</strong><span>{wines.length} vinos guardados</span></div><WineIcon/></div><div className="settings-line"><div><strong>Sincronización</strong><span>{cloudCopy} · móvil y PC se actualizan automáticamente</span></div><Archive/></div></div>
@@ -931,7 +1003,7 @@ function SettingsScreen({wines,cloudStatus,onBack,onImport}:{wines:Wine[];cloudS
 }
 
 function BottomNav({tab,setTab,onAdd}:{tab:Tab;setTab:(t:Tab)=>void;onAdd:()=>void}) {
-  return <nav className="bottom-nav"><NavButton active={tab==='home'} icon={<Home/>} label="Inicio" onClick={()=>setTab('home')}/><NavButton active={tab==='cellar'} icon={<WineIcon/>} label="Vinoteca" onClick={()=>setTab('cellar')}/><button className="nav-add" onClick={onAdd}><Plus/><span>Añadir</span></button><NavButton active={tab==='tried'} icon={<CheckCircle2/>} label="Probados" onClick={()=>setTab('tried')}/><NavButton active={tab==='wishlist'} icon={<Heart/>} label="Por probar" onClick={()=>setTab('wishlist')}/></nav>;
+  return <nav className="bottom-nav"><NavButton active={tab==='home'} icon={<Home/>} label="Inicio" onClick={()=>setTab('home')}/><NavButton active={tab==='cellar'} icon={<WineIcon/>} label="Vinoteca" onClick={()=>setTab('cellar')}/><button className="nav-add" onClick={onAdd}><Plus/><span>Añadir</span></button><NavButton active={tab==='tried'} icon={<CheckCircle2/>} label="Probados" onClick={()=>setTab('tried')}/><NavButton active={tab==='wishlist'} icon={<Bookmark/>} label="Lista de deseos" onClick={()=>setTab('wishlist')}/></nav>;
 }
 function NavButton({active,icon,label,onClick}:{active:boolean;icon:React.ReactNode;label:string;onClick:()=>void}){return <button className={active?'nav-button active':'nav-button'} onClick={onClick}>{icon}<span>{label}</span></button>;}
 function EmptyState({title,text,action,onAction}:{title:string;text:string;action?:string;onAction?:()=>void}){return <div className="empty-state"><div className="empty-icon"><WineIcon/></div><h2>{title}</h2><p>{text}</p>{action&&<button className="primary" onClick={onAction}>{action}</button>}</div>;}
