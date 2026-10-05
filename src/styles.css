@@ -173,3 +173,27 @@ body{overscroll-behavior-y:none}
 
 /* V15 · cabecera segura, acciones compactas y ficha sin clasificación oficial */
 @media(max-width:340px){.brand-hero{padding-left:14px;padding-right:14px}.brand-mark{width:38px;height:38px;flex-basis:38px}.hero-settings{width:36px;height:36px;flex-basis:36px}.brand-name{font-size:22px}.brand-sub{font-size:9.5px}}
+
+/* V16 · cabeceras compactas y consulta externa de vinos */
+.header-tools{display:flex;align-items:center;gap:7px;flex:0 0 auto}
+.header-tool{width:40px;height:40px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--burgundy);display:grid;place-items:center;padding:0;box-shadow:0 3px 10px rgba(70,41,45,.035)}
+.header-tool.active{background:var(--burgundy);border-color:var(--burgundy);color:#fff}
+.compact-sticky .page-header{margin-bottom:7px}
+.compact-sticky .page-intro{margin-bottom:7px}
+.compact-search{height:44px;margin:7px 0!important;border-radius:13px;padding-right:6px}
+.search-close{width:32px;height:32px;border:0;border-radius:9px;background:#f5eeea;color:var(--burgundy);display:grid;place-items:center;padding:0;flex:0 0 auto}
+.compact-filter-panel{border:1px solid var(--line);background:#fff;border-radius:15px;padding:9px 10px 6px;margin:7px 0;box-shadow:0 6px 16px rgba(70,41,45,.045)}
+.filter-panel-line{display:grid;gap:6px;margin-bottom:8px}.filter-panel-line>span{font-size:9px;text-transform:uppercase;letter-spacing:.1em;font-weight:850;color:var(--muted)}
+.compact-chips{padding:0 0 2px;gap:5px}.compact-chips .chip{height:31px;padding:0 10px;font-size:11px}
+.mini-view-toggle{display:grid;grid-template-columns:1fr 1fr;gap:6px}.mini-view-toggle button{height:34px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;font-weight:750}.mini-view-toggle button.active{background:var(--burgundy-soft);border-color:#d9b2bc;color:var(--burgundy)}
+.cellar-sticky.compact-sticky{padding-bottom:6px}.cellar-sticky.compact-sticky .cellar-shelf-bar{padding-top:3px}
+.tried-sticky.compact-sticky{padding-bottom:6px}
+
+.wishlist-tabs{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:4px;background:#efe5e1;border-radius:14px;margin:2px 0 14px}.wishlist-tabs button{height:38px;border:0;border-radius:10px;background:transparent;color:var(--muted);font-size:12px;font-weight:800}.wishlist-tabs button.active{background:#fff;color:var(--burgundy);box-shadow:0 3px 10px rgba(70,41,45,.07)}
+.consult-wines{display:grid;gap:12px}.consult-intro{border:1px solid var(--line);background:#fffaf7;border-radius:17px;padding:13px 14px}.consult-intro strong,.consult-intro span{display:block}.consult-intro strong{font-family:Georgia,"Times New Roman",serif;font-size:17px;color:var(--ink)}.consult-intro span{margin-top:4px;font-size:11px;line-height:1.45;color:var(--muted)}
+.reference-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.reference-card{min-height:104px;border:1px solid var(--line);background:#fff;border-radius:17px;padding:13px;text-decoration:none;color:var(--ink);display:flex;align-items:flex-start;justify-content:space-between;gap:8px;box-shadow:0 5px 14px rgba(70,41,45,.04)}.reference-card>div{min-width:0}.reference-card strong,.reference-card span{display:block}.reference-card strong{font-size:14px;color:var(--burgundy)}.reference-card span{font-size:10px;line-height:1.4;color:var(--muted);margin-top:5px}.reference-card>svg{color:var(--gold);flex:0 0 auto}
+
+/* El recomendador ya tiene campo de comida; solo queda el acceso sorpresa. */
+.food-modes{margin-left:auto}.food-mode.sparkle{width:38px;height:38px;border-radius:12px}
+
+@media(max-width:360px){.header-tools{gap:5px}.header-tool{width:37px;height:37px}.reference-grid{grid-template-columns:1fr}.wishlist-tabs button{font-size:11px}}

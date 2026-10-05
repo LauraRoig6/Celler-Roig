@@ -519,7 +519,7 @@ function HomeScreen({ wines, cellar, tried, wishlist, favorites, bottleCount, on
     <button className="primary big-action" onClick={onAdd}><CirclePlus size={23}/> Añadir un vino</button>
 
     {cellar.length > 0 && <section className="open-tonight-card food-card">
-      <div className="food-card-head"><div className="open-title"><Utensils/><div><strong>¿Qué abrimos hoy?</strong><span>Dime qué vais a comer y busco la botella que mejor encaja.</span></div></div><div className="food-modes"><button className="food-mode active" onClick={recommendDish}><Utensils size={15}/> Comida</button><button className="food-mode sparkle" onClick={surprise} aria-label="Sorpréndeme" title="Sorpréndeme"><Sparkles size={18}/></button></div></div>
+      <div className="food-card-head"><div className="open-title"><Utensils/><div><strong>¿Qué abrimos hoy?</strong><span>Dime qué vais a comer y busco la botella que mejor encaja.</span></div></div><div className="food-modes"><button className="food-mode sparkle" onClick={surprise} aria-label="Sorpréndeme" title="Sorpréndeme"><Sparkles size={18}/></button></div></div>
       <div className="dish-input"><input value={dish} onChange={e=>setDish(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')recommendDish()}} placeholder="Ej. arroz, pasta, carne, pescado…"/><button onClick={recommendDish} disabled={!dish.trim()}>Recomendar</button></div>
       {suggested&&<button className="suggested-wine" onClick={()=>onOpen(suggested.wine)}><BottleVisual wine={suggested.wine} compact/><div><small>Mi propuesta</small><strong>{suggested.wine.name}</strong><span>{suggested.wine.vintage || 'Sin añada'} · {suggested.wine.quantity} en casa</span><em>{suggested.reason}</em></div></button>}
     </section>}
@@ -542,6 +542,8 @@ function CellarScreen(props: {
   viewMode:ViewMode; setViewMode:(m:ViewMode)=>void; search:string; setSearch:(s:string)=>void; typeFilter:CellarFilter; setTypeFilter:(t:CellarFilter)=>void;
   onOpen:(w:Wine)=>void; editingShelf:boolean; setEditingShelf:(v:boolean)=>void; onReorder:(ids:string[])=>void;
 }) {
+  const [searchOpen,setSearchOpen]=useState(false);
+  const [filtersOpen,setFiltersOpen]=useState(false);
   const sensors = useSensors(useSensor(PointerSensor,{activationConstraint:{distance:8}}),useSensor(TouchSensor,{activationConstraint:{delay:220,tolerance:8}}));
   const bottleCount = props.wines.reduce((sum,w)=>sum+w.quantity,0);
   function dragEnd(event: DragEndEvent) {
@@ -550,13 +552,23 @@ function CellarScreen(props: {
     const ids=props.wines.map(w=>w.id), oldIndex=ids.indexOf(String(active.id)), newIndex=ids.indexOf(String(over.id));
     props.onReorder(arrayMove(ids,oldIndex,newIndex));
   }
+  function chooseSort(mode:SortMode){
+    props.setSortMode(mode); props.setEditingShelf(false); props.setSortOpen(false);
+  }
   return <div className="page cellar-page">
-    <div className="sticky-head cellar-sticky">
-      <Header eyebrow="EN CASA" title="Vinoteca" right={<div className="view-toggle"><button className={props.viewMode==='shelf'?'active':''} onClick={()=>props.setViewMode('shelf')}><Archive size={18}/></button><button className={props.viewMode==='list'?'active':''} onClick={()=>props.setViewMode('list')}><List size={18}/></button></div>} />
+    <div className="sticky-head cellar-sticky compact-sticky">
+      <Header eyebrow="EN CASA" title="Vinoteca" right={<div className="header-tools">
+        <button className={searchOpen?'header-tool active':'header-tool'} onClick={()=>{setSearchOpen(v=>!v);setFiltersOpen(false)}} aria-label="Buscar" title="Buscar"><Search size={19}/></button>
+        <button className={filtersOpen?'header-tool active':'header-tool'} onClick={()=>{setFiltersOpen(v=>!v);setSearchOpen(false)}} aria-label="Filtros y orden" title="Filtros y orden"><SlidersHorizontal size={19}/></button>
+        {props.sortMode==='manual'&&props.viewMode==='shelf'&&<button className={props.editingShelf?'header-tool active':'header-tool'} onClick={()=>props.setEditingShelf(!props.editingShelf)} aria-label={props.editingShelf?'Terminar de ordenar':'Ordenar estantería'} title={props.editingShelf?'Terminar de ordenar':'Ordenar estantería'}><GripVertical size={20}/></button>}
+      </div>} />
       <p className="page-intro compact-intro">Aquí aparecen solo las botellas que tienes ahora mismo en casa.</p>
-      <div className="searchbox"><Search size={20}/><input value={props.search} onChange={e=>props.setSearch(e.target.value)} placeholder="Buscar vino, uva, denominación…"/></div>
-      <div className="filter-scroll">{(['Todos','Tinto','Blanco','Rosado','Espumoso','Favoritos','Regalos','Abrir pronto'] as const).map(x=><button key={x} className={props.typeFilter===x?'chip active':'chip'} onClick={()=>props.setTypeFilter(x)}>{x}</button>)}</div>
-      <div className="filter-row"><div className="sort-wrap"><div className="sort-control"><button className="sort-button" onClick={()=>props.setSortOpen(!props.sortOpen)}><SlidersHorizontal size={18}/>{sortOptions.find(x=>x.value===props.sortMode)?.label}<ChevronDown size={17}/></button>{props.sortMode==='manual'&&props.viewMode==='shelf'&&<button className={props.editingShelf?'manual-order-btn active':'manual-order-btn'} onClick={()=>props.setEditingShelf(!props.editingShelf)} title={props.editingShelf?'Terminar de ordenar':'Ordenar estantería'} aria-label={props.editingShelf?'Terminar de ordenar':'Ordenar estantería'}><GripVertical size={19}/></button>}</div>{props.sortOpen&&<div className="sort-menu">{sortOptions.map(o=><button key={o.value} onClick={()=>{props.setSortMode(o.value);props.setSortOpen(false);props.setEditingShelf(false)}} className={props.sortMode===o.value?'chosen':''}>{o.label}{props.sortMode===o.value&&<Check size={17}/>}</button>)}</div>}</div></div>
+      {searchOpen&&<div className="searchbox compact-search"><Search size={19}/><input autoFocus value={props.search} onChange={e=>props.setSearch(e.target.value)} placeholder="Buscar vino, uva, denominación…"/><button className="search-close" onClick={()=>{props.setSearch('');setSearchOpen(false)}} aria-label="Cerrar búsqueda"><X size={17}/></button></div>}
+      {filtersOpen&&<div className="compact-filter-panel">
+        <div className="filter-panel-line"><span>Mostrar</span><div className="filter-scroll compact-chips">{(['Todos','Tinto','Blanco','Rosado','Espumoso','Favoritos','Regalos','Abrir pronto'] as const).map(x=><button key={x} className={props.typeFilter===x?'chip active':'chip'} onClick={()=>props.setTypeFilter(x)}>{x}</button>)}</div></div>
+        <div className="filter-panel-line"><span>Orden</span><div className="filter-scroll compact-chips">{sortOptions.map(o=><button key={o.value} className={props.sortMode===o.value?'chip active':'chip'} onClick={()=>chooseSort(o.value)}>{o.label}</button>)}</div></div>
+        <div className="filter-panel-line"><span>Vista</span><div className="mini-view-toggle"><button className={props.viewMode==='shelf'?'active':''} onClick={()=>props.setViewMode('shelf')}><Archive size={17}/> Estantería</button><button className={props.viewMode==='list'?'active':''} onClick={()=>props.setViewMode('list')}><List size={17}/> Lista</button></div></div>
+      </div>}
       <div className="cellar-shelf-bar"><h2>Mi estantería</h2><span>{bottleCount} {bottleCount===1?'botella':'botellas'}</span></div>
     </div>
     {props.wines.length===0?<EmptyState title="Tu vinoteca está vacía" text="Cuando registres una botella que tengas en casa aparecerá aquí."/>:props.viewMode==='shelf'?<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}><div className="shelf-groups">{props.groups.map(([label,ws])=><ShelfGroup key={label} label={label} wines={ws} onOpen={props.onOpen} draggable={props.sortMode==='manual'&&props.editingShelf} hideHeading={props.sortMode==='manual'}/>)}</div></DndContext>:<div className="wine-list">{props.wines.map(w=><WineListRow key={w.id} wine={w} onClick={()=>props.onOpen(w)}/>)}</div>}
@@ -591,12 +603,45 @@ function WineListRow({wine,onClick}:{wine:Wine;onClick:()=>void}) {
 
 function TriedScreen({wines,onOpen,onAdd}:{wines:Wine[];onOpen:(w:Wine)=>void;onAdd:()=>void}) {
   const [q,setQ]=useState('');
-  const filtered=useMemo(()=>[...wines].filter(w=>wineMatchesQuery(w,q)).sort((a,b)=>(b.lastTastedAt||b.createdAt).localeCompare(a.lastTastedAt||a.createdAt)),[wines,q]);
-  return <div className="page tried-page"><div className="sticky-head tried-sticky"><Header eyebrow="TU MEMORIA" title="Probados" right={<button className="circle-action" onClick={onAdd}><Plus/></button>}/><p className="page-intro">Aquí quedan los vinos que ya has probado, aunque ya no tengas ninguna botella.</p><div className="searchbox"><Search size={20}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar entre los probados…"/></div></div>{filtered.length===0?<EmptyState title="Aún no hay vinos probados" text="Cuando marques un vino como probado quedará guardado aquí." action="Añadir un probado" onAction={onAdd}/>:<div className="tried-list">{filtered.map(w=><button key={w.id} className="tried-card" onClick={()=>onOpen(w)}><div className="tried-photo"><BottleVisual wine={w}/></div><div className="tried-copy"><div><strong>{w.name}</strong>{w.score!=null&&<span className="score-pill"><Star size={13} fill="currentColor"/>{w.score}</span>}</div><span>{w.denomination||w.winery}{w.vintage?` · ${w.vintage}`:''}</span><small>{w.lastTastedAt?`Última vez: ${formatDate(w.lastTastedAt)}`:'Probado'}{w.quantity>0?` · ${w.quantity} en casa`:''}</small>{w.rebuy&&<em>{w.rebuy==='Sí'?'✓ Lo compraría otra vez':`Volver a comprar: ${w.rebuy}`}</em>}</div></button>)}</div>}</div>;
+  const [searchOpen,setSearchOpen]=useState(false);
+  const [filtersOpen,setFiltersOpen]=useState(false);
+  const [order,setOrder]=useState<'recent'|'name'|'score'|'vintage'|'denomination'>('recent');
+  const filtered=useMemo(()=>{
+    const list=[...wines].filter(w=>wineMatchesQuery(w,q));
+    if(order==='name') return list.sort((a,b)=>a.name.localeCompare(b.name,'es'));
+    if(order==='score') return list.sort((a,b)=>(b.score??-1)-(a.score??-1)||a.name.localeCompare(b.name,'es'));
+    if(order==='vintage') return list.sort((a,b)=>(b.vintage??0)-(a.vintage??0)||a.name.localeCompare(b.name,'es'));
+    if(order==='denomination') return list.sort((a,b)=>(a.denomination||'').localeCompare(b.denomination||'','es')||a.name.localeCompare(b.name,'es'));
+    return list.sort((a,b)=>(b.lastTastedAt||b.createdAt).localeCompare(a.lastTastedAt||a.createdAt));
+  },[wines,q,order]);
+  const triedOrders:[typeof order,string][]=[['recent','Más recientes'],['name','Nombre'],['score','Puntuación'],['vintage','Añada'],['denomination','Denominación']];
+  return <div className="page tried-page">
+    <div className="sticky-head tried-sticky compact-sticky">
+      <Header eyebrow="TU MEMORIA" title="Probados" right={<div className="header-tools"><button className={searchOpen?'header-tool active':'header-tool'} onClick={()=>{setSearchOpen(v=>!v);setFiltersOpen(false)}} aria-label="Buscar" title="Buscar"><Search size={19}/></button><button className={filtersOpen?'header-tool active':'header-tool'} onClick={()=>{setFiltersOpen(v=>!v);setSearchOpen(false)}} aria-label="Ordenar" title="Ordenar"><SlidersHorizontal size={19}/></button></div>}/>
+      <p className="page-intro">Aquí quedan los vinos que ya has probado, aunque ya no tengas ninguna botella.</p>
+      {searchOpen&&<div className="searchbox compact-search"><Search size={19}/><input autoFocus value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar entre los probados…"/><button className="search-close" onClick={()=>{setQ('');setSearchOpen(false)}} aria-label="Cerrar búsqueda"><X size={17}/></button></div>}
+      {filtersOpen&&<div className="compact-filter-panel"><div className="filter-panel-line"><span>Ordenar por</span><div className="filter-scroll compact-chips">{triedOrders.map(([value,label])=><button key={value} className={order===value?'chip active':'chip'} onClick={()=>setOrder(value)}>{label}</button>)}</div></div></div>}
+    </div>
+    {filtered.length===0?<EmptyState title="Aún no hay vinos probados" text="Cuando marques un vino como probado quedará guardado aquí." action="Añadir un probado" onAction={onAdd}/>:<div className="tried-list">{filtered.map(w=><button key={w.id} className="tried-card" onClick={()=>onOpen(w)}><div className="tried-photo"><BottleVisual wine={w}/></div><div className="tried-copy"><div><strong>{w.name}</strong>{w.score!=null&&<span className="score-pill"><Star size={13} fill="currentColor"/>{w.score}</span>}</div><span>{w.denomination||w.winery}{w.vintage?` · ${w.vintage}`:''}</span><small>{w.lastTastedAt?`Última vez: ${formatDate(w.lastTastedAt)}`:'Probado'}{w.quantity>0?` · ${w.quantity} en casa`:''}</small>{w.rebuy&&<em>{w.rebuy==='Sí'?'✓ Lo compraría otra vez':`Volver a comprar: ${w.rebuy}`}</em>}</div></button>)}</div>}
+  </div>;
 }
 
+const WINE_REFERENCE_SITES = [
+  {name:'Vivino', url:'https://www.vivino.com/', note:'Valoraciones, estilos y fichas de vinos'},
+  {name:'Bodeboca', url:'https://www.bodeboca.com/vino', note:'Catálogo, fichas y precios'},
+  {name:'Guía Peñín', url:'https://guiapenin.wine/guide/wines', note:'Guía y puntuaciones profesionales'},
+  {name:'Petit Celler', url:'https://www.petitceller.com/es/vino', note:'Catálogo y fichas técnicas'},
+  {name:'CellarTracker', url:'https://www.cellartracker.com/', note:'Notas de usuarios e histórico de añadas'},
+  {name:'Vinatis', url:'https://www.vinatis.com/', note:'Catálogo internacional de vinos'},
+] as const;
+
 function WishlistScreen({wines,onOpen,onAdd}:{wines:Wine[];onOpen:(w:Wine)=>void;onAdd:()=>void}) {
-  return <div className="page wishlist-page"><div className="sticky-head wishlist-sticky"><Header eyebrow="LISTA DE DESEOS" title="Por probar" right={<button className="circle-action" onClick={onAdd}><Plus/></button>}/><p className="page-intro">Vinos que has visto, te han recomendado o quieres comprar algún día.</p></div>{wines.length===0?<EmptyState title="Tu lista está vacía" text="Añade vinos que quieras probar más adelante." action="Añadir vino" onAction={onAdd}/>:<div className="wishlist-grid">{wines.map(w=><button className="wish-card" key={w.id} onClick={()=>onOpen(w)}><div className="wish-image"><BottleVisual wine={w}/></div><div><strong>{w.name}</strong><span>{w.winery}</span>{w.denomination&&<small>{w.denomination}</small>}</div></button>)}</div>}</div>;
+  const [section,setSection]=useState<'wishlist'|'consult'>('wishlist');
+  return <div className="page wishlist-page">
+    <div className="sticky-head wishlist-sticky"><Header eyebrow="LISTA DE DESEOS" title="Por probar" right={<button className="circle-action" onClick={onAdd}><Plus/></button>}/><p className="page-intro">Vinos que has visto, te han recomendado o quieres comprar algún día.</p></div>
+    <div className="wishlist-tabs" role="tablist" aria-label="Por probar"><button className={section==='wishlist'?'active':''} onClick={()=>setSection('wishlist')}>Lista de deseos</button><button className={section==='consult'?'active':''} onClick={()=>setSection('consult')}>Consultar vinos</button></div>
+    {section==='wishlist' ? (wines.length===0?<EmptyState title="Tu lista está vacía" text="Añade vinos que quieras probar más adelante." action="Añadir vino" onAction={onAdd}/>:<div className="wishlist-grid">{wines.map(w=><button className="wish-card" key={w.id} onClick={()=>onOpen(w)}><div className="wish-image"><BottleVisual wine={w}/></div><div><strong>{w.name}</strong><span>{w.winery}</span>{w.denomination&&<small>{w.denomination}</small>}</div></button>)}</div>) : <section className="consult-wines"><div className="consult-intro"><strong>Consulta otras guías y vinotecas</strong><span>Abre la web que prefieras para buscar fichas, opiniones, puntuaciones o precios.</span></div><div className="reference-grid">{WINE_REFERENCE_SITES.map(site=><a key={site.name} className="reference-card" href={site.url} target="_blank" rel="noreferrer"><div><strong>{site.name}</strong><span>{site.note}</span></div><ExternalLink size={18}/></a>)}</div></section>}
+  </div>;
 }
 
 type ImportedWineData={name?:string;winery?:string;vintage?:number;type?:WineType;typeConfidence?:number;grapes?:string[];aging?:Aging;protection?:Protection;classification?:string;denomination?:string;region?:string;country?:string;alcohol?:number;price?:number;imageUrl?:string;sourceUrl?:string;sourceTitle?:string;fieldsFound?:number;categories?:string;rawText?:string;pairing?:string;pairingSource?:string;};

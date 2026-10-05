@@ -1,8 +1,8 @@
-# Celler Roig · V15
+# Celler Roig · V16
 
 Vinoteca personal mobile-first de Pedro.
 
-## Novedades V15
+## Novedades V16
 
 - **¿Qué abrimos hoy?** ahora acepta el nombre de un plato (por ejemplo, `paella mixta` o `cordero al horno con patatas panadera`) y compara ese plato con los maridajes de las botellas disponibles en la Vinoteca. El botón ✨ mantiene el modo **Sorpréndeme**.
 - Cabeceras **fijas (sticky)** para que la navegación se sienta más como una app móvil:
@@ -17,7 +17,7 @@ Vinoteca personal mobile-first de Pedro.
   - 3 en Vinoteca (uno regalado, uno pendiente de probar y uno probado),
   - 1 solo en Probados,
   - 1 en Por probar.
-- V15 elimina los vinos de ejemplo antiguos y los sustituye por los nuevos, conservando cualquier vino real añadido por el usuario.
+- V16 elimina los vinos de ejemplo antiguos y los sustituye por los nuevos, conservando cualquier vino real añadido por el usuario.
 
 ## Variables de entorno en Vercel
 
@@ -33,3 +33,10 @@ npm run build
 ```
 
 El proyecto usa Vite + React + TypeScript y está preparado para desplegarse en Vercel.
+
+
+## Cambios V16
+- Por probar incluye pestañas **Lista de deseos / Consultar vinos** con accesos a Vivino, Bodeboca, Guía Peñín, Petit Celler, CellarTracker y Vinatis.
+- En Inicio se elimina el botón redundante “Comida”; se mantiene ✨ Sorpréndeme.
+- Vinoteca y Probados usan cabeceras compactas: búsqueda y filtros se abren desde iconos.
+- En Vinoteca, el icono de arrastre aparece solo cuando el orden es **Mi orden**.
