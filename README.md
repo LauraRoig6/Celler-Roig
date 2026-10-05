@@ -1,29 +1,22 @@
-# Celler Roig · V16
+# Celler Roig · V17
 
 Vinoteca personal mobile-first de Pedro.
 
-## Novedades V16
+## Novedades V17
 
-- **¿Qué abrimos hoy?** ahora acepta el nombre de un plato (por ejemplo, `paella mixta` o `cordero al horno con patatas panadera`) y compara ese plato con los maridajes de las botellas disponibles en la Vinoteca. El botón ✨ mantiene el modo **Sorpréndeme**.
-- Cabeceras **fijas (sticky)** para que la navegación se sienta más como una app móvil:
-  - Inicio: logo + buscador.
-  - Vinoteca: cabecera, buscador, filtros, orden y título `Mi estantería`.
-  - Probados: cabecera + buscador.
-  - Por probar: cabecera + texto explicativo.
-- En `Mi orden`, el modo para reorganizar la estantería se activa con el icono de puntos/agarre junto al selector. El icono desaparece con los demás criterios de ordenación.
-- La Vinoteca ya no muestra el número de baldas; solo el total de botellas.
-- Branding: `CELLER ROIG` en una sola línea y subtítulo `La vinoteca de Pedro`.
-- Nueva colección demo de **5 vinos ficticios con fichas completas**:
-  - 3 en Vinoteca (uno regalado, uno pendiente de probar y uno probado),
-  - 1 solo en Probados,
-  - 1 en Por probar.
-- V16 elimina los vinos de ejemplo antiguos y los sustituye por los nuevos, conservando cualquier vino real añadido por el usuario.
+- **Escáner de código de barras (EAN/UPC)** pensado para Android/Chrome. Al detectar el código, Celler Roig intenta resolver qué vino es y abre la misma búsqueda visual de fichas y botellas. Si el navegador no soporta el escáner, se puede escribir el código manualmente.
+- **Confirmación inteligente antes de guardar** los vinos que se hayan autorrellenado: revisa Nombre, Añada, Tipo, Denominación y Uvas, y marca claramente lo que falte o sea dudoso.
+- **Mejor gestión de imágenes**: las imágenes elegidas de Internet se descargan, redimensionan y comprimen antes de guardarse con la ficha. Cuando el fondo blanco de catálogo se puede eliminar con seguridad, se conserva transparencia; si no, se guarda una copia WebP ligera. Así dependemos menos de URLs externas.
+- **Mejor rendimiento y sincronización**: móvil y PC consultan cada 15 s solo una marca ligera de cambios en Neon. La colección completa (incluidas imágenes) solo se descarga cuando realmente ha cambiado. Las imágenes usan carga diferida.
+- El Service Worker ya **no cachea las APIs**, evitando respuestas antiguas de sincronización.
+- `Por probar → Consultar vinos` añade **Wine-Searcher, Decanter, Decántalo y Vinissimus** a Vivino, Bodeboca, Guía Peñín, Petit Celler, CellarTracker y Vinatis.
+- La búsqueda interna también considera Wine-Searcher, Decanter, Guía Peñín y CellarTracker como fuentes relevantes además de las vinotecas ya priorizadas.
 
 ## Variables de entorno en Vercel
 
 - `DATABASE_URL` → Neon PostgreSQL.
-- `SERPER_API_KEY` → búsqueda escrita de botellas/fichas.
-- `SERPAPI_API_KEY` → búsqueda por foto con Google Lens, si se sigue utilizando.
+- `SERPER_API_KEY` → búsqueda escrita / por código de botellas y fichas.
+- `SERPAPI_API_KEY` → búsqueda por foto con Google Lens (opcional si se mantiene esa vía).
 
 ## Desarrollo
 
@@ -33,16 +26,3 @@ npm run build
 ```
 
 El proyecto usa Vite + React + TypeScript y está preparado para desplegarse en Vercel.
-
-
-## Cambios V16
-- Por probar incluye pestañas **Lista de deseos / Consultar vinos** con accesos a Vivino, Bodeboca, Guía Peñín, Petit Celler, CellarTracker y Vinatis.
-- En Inicio se elimina el botón redundante “Comida”; se mantiene ✨ Sorpréndeme.
-- Vinoteca y Probados usan cabeceras compactas: búsqueda y filtros se abren desde iconos.
-- En Vinoteca, el icono de arrastre aparece solo cuando el orden es **Mi orden**.
-
-
-## V16.1
-- Los vinos de demostración ya no se vuelven a crear al borrarlos.
-- Al actualizar, los ejemplos antiguos se eliminan también de Neon para que no reaparezcan entre dispositivos.
-- Una instalación nueva empieza con la colección vacía.

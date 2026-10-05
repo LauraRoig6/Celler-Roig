@@ -98,7 +98,7 @@ function isLightBackground(data: Uint8ClampedArray, offset: number) {
 async function removeWhiteCatalogBackground(file: Blob): Promise<string> {
   const src = await fileToDataUrl(file);
   const img = await loadImage(src);
-  const maxH = 1050;
+  const maxH = 760;
   const scale = Math.min(1, maxH / img.naturalHeight);
   const w = Math.max(1, Math.round(img.naturalWidth * scale));
   const h = Math.max(1, Math.round(img.naturalHeight * scale));
@@ -127,28 +127,32 @@ async function removeWhiteCatalogBackground(file: Blob): Promise<string> {
     data[idx*4+3] = 0; removed++;
     if (x>0) push(idx-1); if (x<w-1) push(idx+1); if (y>0) push(idx-w); if (y<h-1) push(idx+w);
   }
-  // Si casi no había fondo blanco, no fingimos que lo hemos eliminado.
-  if (removed < w*h*.025) return src;
+  // Si casi no había fondo blanco, guardamos igualmente una copia comprimida propia
+  // para no depender de la URL externa y para que la estantería cargue rápido.
+  if (removed < w*h*.025) {
+    const compact = await canvasToBlob(canvas, 'image/webp', .82).catch(() => null);
+    return compact ? fileToDataUrl(compact) : src;
+  }
   ctx.putImageData(image, 0, 0);
   return cropTransparentCanvas(canvas);
 }
 
 function cropTransparentCanvas(canvas: HTMLCanvasElement): string {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) return canvas.toDataURL('image/png');
+  if (!ctx) return canvas.toDataURL('image/webp', .86);
   const w=canvas.width,h=canvas.height;
   const data=ctx.getImageData(0,0,w,h).data;
   let minX=w,minY=h,maxX=-1,maxY=-1;
   for(let y=0;y<h;y++) for(let x=0;x<w;x++) {
     if(data[(y*w+x)*4+3]>14){minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);}
   }
-  if(maxX<minX||maxY<minY) return canvas.toDataURL('image/png');
+  if(maxX<minX||maxY<minY) return canvas.toDataURL('image/webp', .86);
   const pad=Math.max(8,Math.round(Math.min(w,h)*.018));
   minX=Math.max(0,minX-pad);minY=Math.max(0,minY-pad);maxX=Math.min(w-1,maxX+pad);maxY=Math.min(h-1,maxY+pad);
   const cw=maxX-minX+1,ch=maxY-minY+1;
   const out=document.createElement('canvas');out.width=cw;out.height=ch;
   out.getContext('2d')?.drawImage(canvas,minX,minY,cw,ch,0,0,cw,ch);
-  return out.toDataURL('image/png');
+  return out.toDataURL('image/webp', .86);
 }
 
 export async function prepareBottleImageFromUrl(url: string): Promise<string> {

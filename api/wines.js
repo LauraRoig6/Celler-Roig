@@ -11,7 +11,7 @@ function getSql() {
   return neon(url);
 }
 
-async function ensureTable(sql) {
+async function ensureTables(sql) {
   await sql`
     CREATE TABLE IF NOT EXISTS celler_roig_wines (
       id text PRIMARY KEY,
@@ -20,6 +20,23 @@ async function ensureTable(sql) {
       updated_at timestamptz NOT NULL DEFAULT now()
     )
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS celler_roig_meta (
+      id integer PRIMARY KEY,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`INSERT INTO celler_roig_meta (id) VALUES (1) ON CONFLICT (id) DO NOTHING`;
+}
+
+async function touchMeta(sql) {
+  const rows = await sql`UPDATE celler_roig_meta SET updated_at = now() WHERE id = 1 RETURNING updated_at`;
+  return rows[0]?.updated_at || new Date().toISOString();
+}
+
+async function getMeta(sql) {
+  const rows = await sql`SELECT updated_at FROM celler_roig_meta WHERE id = 1`;
+  return rows[0]?.updated_at || null;
 }
 
 function parseBody(req) {
@@ -49,18 +66,21 @@ export default async function handler(req, res) {
   if (!sql) return json(res, 503, { code: 'DATABASE_NOT_CONFIGURED', error: 'Falta DATABASE_URL en Vercel.' });
 
   try {
-    await ensureTable(sql);
+    await ensureTables(sql);
 
     if (req.method === 'GET') {
+      const updatedAt = await getMeta(sql);
+      if (String(req.query?.meta || '') === '1') return json(res, 200, { updatedAt });
       const rows = await sql`SELECT data FROM celler_roig_wines ORDER BY manual_order ASC, updated_at ASC`;
-      return json(res, 200, { wines: rows.map(row => row.data) });
+      return json(res, 200, { wines: rows.map(row => row.data), updatedAt });
     }
 
     const body = parseBody(req);
 
     if (req.method === 'PUT') {
       await upsertWine(sql, body.wine);
-      return json(res, 200, { ok: true });
+      const updatedAt = await touchMeta(sql);
+      return json(res, 200, { ok: true, updatedAt });
     }
 
     if (req.method === 'POST') {
@@ -92,7 +112,8 @@ export default async function handler(req, res) {
           )
         `;
       }
-      return json(res, 200, { ok: true, count: wines.length });
+      const updatedAt = await touchMeta(sql);
+      return json(res, 200, { ok: true, count: wines.length, updatedAt });
     }
 
     if (req.method === 'PATCH') {
@@ -109,13 +130,15 @@ export default async function handler(req, res) {
           WHERE w.id = item->>'id'
         `;
       }
-      return json(res, 200, { ok: true });
+      const updatedAt = await touchMeta(sql);
+      return json(res, 200, { ok: true, updatedAt });
     }
 
     if (req.method === 'DELETE') {
       if (!body.id) return json(res, 400, { error: 'Falta el id del vino.' });
       await sql`DELETE FROM celler_roig_wines WHERE id = ${String(body.id)}`;
-      return json(res, 200, { ok: true });
+      const updatedAt = await touchMeta(sql);
+      return json(res, 200, { ok: true, updatedAt });
     }
 
     res.setHeader('Allow', 'GET,POST,PUT,PATCH,DELETE');

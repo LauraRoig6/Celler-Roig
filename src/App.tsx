@@ -3,7 +3,7 @@ import {
   Archive, Camera, ChevronDown, CirclePlus, Clock3, Gift, Heart, Home, ImagePlus,
   List, Mic, Minus, Pencil, Plus, Search, Settings, SlidersHorizontal, Sparkles,
   Star, Trash2, Undo2, Wine as WineIcon, X, Check, ShoppingBag, GlassWater, GripVertical,
-  ExternalLink, CheckCircle2, Download, Upload, BarChart3, Utensils,
+  ExternalLink, CheckCircle2, Download, Upload, BarChart3, Utensils, ScanBarcode, AlertTriangle,
 } from 'lucide-react';
 import {
   DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
@@ -197,6 +197,7 @@ function App() {
   const [undoDrink, setUndoDrink] = useState<Wine | null>(null);
   const undoTimer = useRef<number | null>(null);
   const winesRef = useRef<Wine[]>(wines);
+  const cloudVersionRef = useRef('');
 
   useEffect(() => { winesRef.current = wines; localStorage.setItem(STORAGE_KEY, JSON.stringify(wines)); }, [wines]);
   useEffect(() => { if (selectedWine) setSelectedWine(wines.find(w => w.id === selectedWine.id) || null); }, [wines]);
@@ -218,13 +219,16 @@ function App() {
       const cleaned = removeDemoWines(remoteWines);
       if (cleaned.changed) {
         setWines(cleaned.wines);
-        await fetch('/api/wines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wines: cleaned.wines, replace: true }) });
+        const cleanRes = await fetch('/api/wines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wines: cleaned.wines, replace: true }) });
+        const cleanData = await cleanRes.json().catch(() => ({}));
+        cloudVersionRef.current = String(cleanData.updatedAt || data.updatedAt || '');
         setCloudStatus('synced');
         return;
       }
       // Neon es la fuente común entre móvil y PC. Incluso una colección vacía
       // debe sustituir la copia local para que los borrados se propaguen.
       setWines(remoteWines);
+      cloudVersionRef.current = String(data.updatedAt || '');
       setCloudStatus('synced');
     } catch { setCloudStatus('error'); }
   }
@@ -235,6 +239,8 @@ function App() {
       setCloudStatus('saving');
       const res = await fetch('/api/wines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wines: winesRef.current, replace: true }) });
       if (!res.ok) throw new Error('sync');
+      const data = await res.json().catch(() => ({}));
+      cloudVersionRef.current = String(data.updatedAt || cloudVersionRef.current);
       localStorage.removeItem(DIRTY_KEY);
       setCloudStatus('synced');
       return true;
@@ -255,14 +261,22 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const refresh = () => {
-      if (document.visibilityState === 'visible' && localStorage.getItem(DIRTY_KEY) !== '1') void pullFromCloud();
+    const checkCloudChanges = async () => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine || localStorage.getItem(DIRTY_KEY) === '1') return;
+      try {
+        const res = await fetch('/api/wines?meta=1', { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        const remoteVersion = String(data.updatedAt || '');
+        if (remoteVersion && remoteVersion !== cloudVersionRef.current) await pullFromCloud();
+      } catch {}
     };
+    const refresh = () => { if (document.visibilityState === 'visible') void checkCloudChanges(); };
     const online = async () => {
       const pushed = await pushPendingCollection();
       if (!pushed) await pullFromCloud();
     };
-    const timer = window.setInterval(refresh, 8000);
+    const timer = window.setInterval(() => void checkCloudChanges(), 15000);
     window.addEventListener('focus', refresh);
     window.addEventListener('online', online);
     document.addEventListener('visibilitychange', refresh);
@@ -286,6 +300,8 @@ function App() {
         setCloudStatus(data.code === 'DATABASE_NOT_CONFIGURED' ? 'local' : 'error');
         return;
       }
+      const data = await res.json().catch(() => ({}));
+      cloudVersionRef.current = String(data.updatedAt || cloudVersionRef.current);
       localStorage.removeItem(DIRTY_KEY); setCloudStatus('synced');
     } catch { localStorage.setItem(DIRTY_KEY, '1'); setCloudStatus('error'); }
   }
@@ -298,6 +314,8 @@ function App() {
       const order = list.map(w => ({ id: w.id, manualOrder: w.manualOrder }));
       const res = await fetch('/api/wines', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order }) });
       if (!res.ok) throw new Error('order');
+      const data = await res.json().catch(() => ({}));
+      cloudVersionRef.current = String(data.updatedAt || cloudVersionRef.current);
       localStorage.removeItem(DIRTY_KEY); setCloudStatus('synced');
     } catch { localStorage.setItem(DIRTY_KEY, '1'); setCloudStatus('error'); }
   }
@@ -309,6 +327,8 @@ function App() {
     try {
       const res = await fetch('/api/wines', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
       if (!res.ok) throw new Error('delete');
+      const data = await res.json().catch(() => ({}));
+      cloudVersionRef.current = String(data.updatedAt || cloudVersionRef.current);
       localStorage.removeItem(DIRTY_KEY); setCloudStatus('synced');
     } catch { localStorage.setItem(DIRTY_KEY, '1'); setCloudStatus('error'); }
   }
@@ -320,6 +340,8 @@ function App() {
     try {
       const res = await fetch('/api/wines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wines: list, replace: true }) });
       if (!res.ok) throw new Error('replace');
+      const data = await res.json().catch(() => ({}));
+      cloudVersionRef.current = String(data.updatedAt || cloudVersionRef.current);
       localStorage.removeItem(DIRTY_KEY); setCloudStatus('synced');
     } catch { localStorage.setItem(DIRTY_KEY, '1'); setCloudStatus('error'); }
   }
@@ -586,7 +608,7 @@ function SortableBottle({wine,onOpen,enabled}:{wine:Wine;onOpen:(w:Wine)=>void;e
 }
 
 function BottleVisual({wine,compact=false}:{wine:Wine;compact?:boolean}) {
-  if(wine.imageUrl)return <div className={compact?'bottle-image compact':'bottle-image'}><img src={wine.imageUrl} alt={wine.name}/></div>;
+  if(wine.imageUrl)return <div className={compact?'bottle-image compact':'bottle-image'}><img src={wine.imageUrl} alt={wine.name} loading="lazy" decoding="async"/></div>;
   return <div className={compact?'bottle-placeholder compact':'bottle-placeholder'} aria-label="Botella sin imagen"><div className="bottle-neck"/><div className="bottle-body"><div className="fake-label"><span>{wine.name.split(' ')[0]}</span><small>{wine.vintage||''}</small></div></div></div>;
 }
 
@@ -625,10 +647,14 @@ function TriedScreen({wines,onOpen,onAdd}:{wines:Wine[];onOpen:(w:Wine)=>void;on
 
 const WINE_REFERENCE_SITES = [
   {name:'Vivino', url:'https://www.vivino.com/', note:'Valoraciones, estilos y fichas de vinos'},
+  {name:'Wine-Searcher', url:'https://www.wine-searcher.com/', note:'Precios, añadas y tiendas de todo el mundo'},
   {name:'Bodeboca', url:'https://www.bodeboca.com/vino', note:'Catálogo, fichas y precios'},
   {name:'Guía Peñín', url:'https://guiapenin.wine/guide/wines', note:'Guía y puntuaciones profesionales'},
+  {name:'Decanter', url:'https://www.decanter.com/wine-reviews/search/', note:'Reseñas profesionales y búsqueda por región, uva y añada'},
   {name:'Petit Celler', url:'https://www.petitceller.com/es/vino', note:'Catálogo y fichas técnicas'},
   {name:'CellarTracker', url:'https://www.cellartracker.com/', note:'Notas de usuarios e histórico de añadas'},
+  {name:'Decántalo', url:'https://www.decantalo.com/es/es/vino/', note:'Fichas técnicas y catálogo amplio'},
+  {name:'Vinissimus', url:'https://www.vinissimus.com/es/vinos/', note:'Catálogo, añadas y fichas de vinos'},
   {name:'Vinatis', url:'https://www.vinatis.com/', note:'Catálogo internacional de vinos'},
 ] as const;
 
@@ -648,7 +674,7 @@ function inferWineType(categories=''):WineType|undefined{const value=categories.
 function inferAgingText(text=''):Aging|undefined{const value=text.toLowerCase();if(value.includes('gran reserva'))return'Gran Reserva';if(/\breserva\b/.test(value))return'Reserva';if(/\bcrianza\b/.test(value))return'Crianza';if(/\broble\b|barrica/.test(value))return'Roble';if(/\bjoven\b/.test(value))return'Joven';return undefined;}
 
 function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{form:EditableWine;setForm:React.Dispatch<React.SetStateAction<EditableWine>>;save:()=>void;editing:boolean;moreInfo:boolean;setMoreInfo:(v:boolean)=>void;onCancel:()=>void;}) {
-  const [catalogOpen,setCatalogOpen]=useState(false); const [catalogInitial,setCatalogInitial]=useState(''); const [catalogSeedImages,setCatalogSeedImages]=useState<WineImageResult[]>([]); const [catalogFromPhoto,setCatalogFromPhoto]=useState(false); const [photoMessage,setPhotoMessage]=useState(''); const [photoBusy,setPhotoBusy]=useState(false); const [dictating,setDictating]=useState(false);
+  const [catalogOpen,setCatalogOpen]=useState(false); const [catalogInitial,setCatalogInitial]=useState(''); const [catalogSeedImages,setCatalogSeedImages]=useState<WineImageResult[]>([]); const [catalogFromPhoto,setCatalogFromPhoto]=useState(false); const [photoMessage,setPhotoMessage]=useState(''); const [photoBusy,setPhotoBusy]=useState(false); const [dictating,setDictating]=useState(false); const [barcodeOpen,setBarcodeOpen]=useState(false); const [reviewOpen,setReviewOpen]=useState(false); const [reviewNeeded,setReviewNeeded]=useState(false); const [autofillSource,setAutofillSource]=useState('');
   async function pickImage(file?:File){
     if(!file)return;
     setPhotoBusy(true);
@@ -695,11 +721,19 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
       pairing:product.pairing?.trim() || f.pairing || pairingSuggestion(confidentType||f.type, importedGrapes.length?importedGrapes:f.grapes, inferredAging||f.aging),
       pairingSource:product.pairing?.trim() ? (product.pairingSource||'web') : (f.pairingSource || (pairingSuggestion(confidentType||f.type, importedGrapes.length?importedGrapes:f.grapes, inferredAging||f.aging)?'sugerencia':'')),
     }));
-    setMoreInfo(true);setCatalogOpen(false);
+    setMoreInfo(true);setCatalogOpen(false);setReviewNeeded(true);setAutofillSource(product.sourceTitle?.trim()||'búsqueda en Internet');
+  }
+  function requestSave(){
+    if(!form.name.trim()){alert('Escribe el nombre del vino antes de guardarlo.');return;}
+    if(reviewNeeded&&!editing){setReviewOpen(true);return;}
+    save();
+  }
+  function useBarcode(code:string){
+    setBarcodeOpen(false);setCatalogSeedImages([]);setCatalogFromPhoto(false);setCatalogInitial(code);setPhotoMessage(`Código ${code} leído. Buscando la botella y su ficha…`);setCatalogOpen(true);
   }
   function dictate(){const w=window as any;const Speech=w.SpeechRecognition||w.webkitSpeechRecognition;if(!Speech){alert('El dictado no está disponible en este navegador. Puedes usar el micrófono del teclado del móvil.');return;}const r=new Speech();r.lang='es-ES';r.interimResults=false;r.maxAlternatives=1;setDictating(true);r.onresult=(e:any)=>{const text=e.results?.[0]?.[0]?.transcript||'';setForm(f=>({...f,notes:[f.notes,text].filter(Boolean).join(f.notes?' ':'')}));};r.onerror=()=>setDictating(false);r.onend=()=>setDictating(false);r.start();}
-  return <div className="page add-page"><div className="add-top"><button className="icon-button" onClick={onCancel}><X/></button><div><div className="eyebrow">{editing?'EDITAR':'NUEVO VINO'}</div><h1>{editing?'Editar vino':'Añadir vino'}</h1></div><button className="save-top" onClick={save}>Guardar</button></div>
-    <div className="image-picker"><BottleVisual wine={{...form,id:'preview',createdAt:'',manualOrder:0}}/><div className="image-actions"><label className="secondary photo-primary"><Camera size={18}/>{photoBusy?'Buscando…':'Escanear botella'}<input type="file" accept="image/*" capture="environment" onChange={e=>pickImage(e.target.files?.[0])}/></label><label className="ghost-button gallery-button"><ImagePlus size={18}/> Elegir foto<input type="file" accept="image/*" onChange={e=>pickImage(e.target.files?.[0])}/></label><button type="button" className="ghost-button" onClick={openCatalog}><Search size={18}/> Buscar botella y datos</button></div><p>{photoMessage||'Haz una foto nítida de la etiqueta. La usamos sólo para identificar el vino; después Celler Roig busca la foto y la ficha en vinotecas especializadas.'}</p></div>
+  return <div className="page add-page"><div className="add-top"><button className="icon-button" onClick={onCancel}><X/></button><div><div className="eyebrow">{editing?'EDITAR':'NUEVO VINO'}</div><h1>{editing?'Editar vino':'Añadir vino'}</h1></div><button className="save-top" onClick={requestSave}>Guardar</button></div>
+    <div className="image-picker"><BottleVisual wine={{...form,id:'preview',createdAt:'',manualOrder:0}}/><div className="image-actions"><label className="secondary photo-primary"><Camera size={18}/>{photoBusy?'Buscando…':'Escanear botella'}<input type="file" accept="image/*" capture="environment" onChange={e=>pickImage(e.target.files?.[0])}/></label><label className="ghost-button gallery-button"><ImagePlus size={18}/> Elegir foto<input type="file" accept="image/*" onChange={e=>pickImage(e.target.files?.[0])}/></label><button type="button" className="ghost-button" onClick={openCatalog}><Search size={18}/> Buscar botella y datos</button><button type="button" className="ghost-button" onClick={()=>setBarcodeOpen(true)}><ScanBarcode size={18}/> Escanear código</button></div><p>{photoMessage||'Haz una foto nítida de la etiqueta. La usamos sólo para identificar el vino; después Celler Roig busca la foto y la ficha en vinotecas especializadas.'}</p></div>
 
     <div className="form-card essentials-card">
       <Field label="Nombre del vino *"><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Ej. Muga Reserva"/></Field>
@@ -735,9 +769,67 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
       <div className="two-cols rating-row"><Field label="Puntuación (0–10)"><input type="number" inputMode="decimal" min="0" max="10" step="0.1" value={form.score??''} onChange={e=>setForm(f=>({...f,score:e.target.value?Math.min(10,Math.max(0,Number(e.target.value))):undefined}))}/></Field><Field label="¿Lo comprarías otra vez?"><div className="choice-grid three rebuy-choices">{(['Sí','Quizá','No'] as const).map(x=><button type="button" key={x} className={form.rebuy===x?'choice active':'choice'} onClick={()=>setForm(f=>({...f,rebuy:x}))}>{x}</button>)}</div></Field></div>
       <Field label="Notas"><div className="notes-input-head"><span>Tu opinión</span><button type="button" className={dictating?'dictate active':'dictate'} onClick={dictate}><Mic size={16}/>{dictating?'Escuchando…':'Dictar'}</button></div><textarea rows={4} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} placeholder="Qué te pareció, con qué lo tomaste…"/></Field>
     </div>}
-    <button className="primary save-bottom" onClick={save}>{editing?'Guardar cambios':'Guardar vino'}</button>
-    {catalogOpen&&<CatalogSearchModal initialQuery={catalogInitial} seedImages={catalogSeedImages} fromPhoto={catalogFromPhoto} onClose={()=>setCatalogOpen(false)} onSelect={useImportedWine}/>}  
+    <button className="primary save-bottom" onClick={requestSave}>{editing?'Guardar cambios':'Guardar vino'}</button>
+    {catalogOpen&&<CatalogSearchModal initialQuery={catalogInitial} seedImages={catalogSeedImages} fromPhoto={catalogFromPhoto} onClose={()=>setCatalogOpen(false)} onSelect={useImportedWine}/>}
+    {barcodeOpen&&<BarcodeScannerModal onClose={()=>setBarcodeOpen(false)} onFound={useBarcode}/>}
+    {reviewOpen&&<SaveReviewModal form={form} source={autofillSource} onBack={()=>setReviewOpen(false)} onConfirm={()=>{setReviewOpen(false);setReviewNeeded(false);save();}}/>}
   </div>;
+}
+
+
+function BarcodeScannerModal({onClose,onFound}:{onClose:()=>void;onFound:(code:string)=>void}) {
+  const videoRef=useRef<HTMLVideoElement>(null);
+  const streamRef=useRef<MediaStream|null>(null);
+  const foundRef=useRef(false);
+  const [error,setError]=useState('');
+  const [manual,setManual]=useState('');
+  const [starting,setStarting]=useState(true);
+
+  useEffect(()=>{
+    let timer:number|undefined;
+    let cancelled=false;
+    const stop=()=>{streamRef.current?.getTracks().forEach(t=>t.stop());streamRef.current=null;if(timer)window.clearInterval(timer);};
+    async function start(){
+      const Detector=(window as any).BarcodeDetector;
+      if(!Detector){setError('Este navegador no permite leer códigos directamente. Puedes escribir los números de debajo del código.');setStarting(false);return;}
+      try{
+        const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false});
+        if(cancelled){stream.getTracks().forEach(t=>t.stop());return;}
+        streamRef.current=stream;
+        if(videoRef.current){videoRef.current.srcObject=stream;await videoRef.current.play().catch(()=>{});}
+        const wanted=['ean_13','ean_8','upc_a','upc_e','code_128'];
+        const supported=typeof Detector.getSupportedFormats==='function'?await Detector.getSupportedFormats().catch(()=>wanted):wanted;
+        const formats=wanted.filter(f=>supported.includes(f));
+        const detector=formats.length?new Detector({formats}):new Detector();
+        setStarting(false);
+        timer=window.setInterval(async()=>{
+          if(foundRef.current||!videoRef.current||videoRef.current.readyState<2)return;
+          try{
+            const codes=await detector.detect(videoRef.current);
+            const raw=String(codes?.[0]?.rawValue||'').replace(/\D/g,'');
+            if(raw.length>=8&&raw.length<=14){foundRef.current=true;stop();onFound(raw);}
+          }catch{}
+        },420);
+      }catch{setStarting(false);setError('No he podido abrir la cámara. Revisa el permiso de cámara o escribe el código manualmente.');}
+    }
+    void start();
+    return()=>{cancelled=true;stop();};
+  },[]);
+
+  function submitManual(){const code=manual.replace(/\D/g,'');if(code.length<8||code.length>14){setError('El código suele tener entre 8 y 14 números.');return;}foundRef.current=true;streamRef.current?.getTracks().forEach(t=>t.stop());onFound(code);}
+  return <div className="modal-backdrop scanner-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="barcode-modal"><div className="modal-handle"/><div className="catalog-head"><div><div className="eyebrow">AÑADIR RÁPIDO</div><h2>Escanear código</h2></div><button className="icon-button" onClick={onClose}><X/></button></div><p className="catalog-help">Apunta al código de barras de la botella. Celler Roig usará el número para buscar la ficha correcta.</p><div className="barcode-camera"><video ref={videoRef} muted playsInline/><div className="barcode-frame"><span/><span/><span/><span/></div>{starting&&<div className="camera-status">Abriendo cámara…</div>}</div>{error&&<div className="catalog-error">{error}</div>}<div className="barcode-manual"><span>También puedes escribirlo</span><div><input inputMode="numeric" pattern="[0-9]*" value={manual} onChange={e=>setManual(e.target.value.replace(/\D/g,''))} onKeyDown={e=>{if(e.key==='Enter')submitManual()}} placeholder="Ej. 8410869450012"/><button className="primary" onClick={submitManual}>Buscar</button></div></div></article></div>;
+}
+
+function SaveReviewModal({form,source,onBack,onConfirm}:{form:EditableWine;source:string;onBack:()=>void;onConfirm:()=>void}) {
+  const rows=[
+    ['Nombre',form.name||'Revisar',Boolean(form.name)],
+    ['Añada',form.vintage?String(form.vintage):'Sin indicar',Boolean(form.vintage)],
+    ['Tipo',form.type==='Sin indicar'?'Revisar':form.type,form.type!=='Sin indicar'],
+    ['Denominación',form.denomination||'Sin indicar',Boolean(form.denomination)],
+    ['Uva / variedades',form.grapes.length?form.grapes.join(', '):'Sin indicar',form.grapes.length>0],
+  ] as const;
+  const warnings=rows.filter(([, ,ok])=>!ok).length;
+  return <div className="modal-backdrop review-backdrop"><article className="save-review-modal"><div className="modal-handle"/><div className="review-title"><div className={warnings?'review-icon warning':'review-icon'}>{warnings?<AlertTriangle/>:<CheckCircle2/>}</div><div><div className="eyebrow">ANTES DE GUARDAR</div><h2>Revisa la ficha</h2></div></div><p>{warnings?'Hay algún dato importante que no hemos podido confirmar. Puedes guardarlo igualmente o corregirlo.':'Los datos principales parecen completos. Comprueba que corresponden a tu botella.'}</p>{source&&<small className="review-source">Autorrellenado desde {source}</small>}<div className="review-list">{rows.map(([label,value,ok])=><div key={label} className={ok?'review-row':'review-row missing'}><span>{label}</span><strong>{value}</strong>{ok?<Check size={16}/>:<AlertTriangle size={16}/>}</div>)}</div><div className="review-actions"><button className="secondary" onClick={onBack}>Volver y corregir</button><button className="primary" onClick={onConfirm}>Guardar así</button></div></article></div>;
 }
 
 function CatalogSearchModal({initialQuery,seedImages=[],fromPhoto=false,onClose,onSelect}:{initialQuery:string;seedImages?:WineImageResult[];fromPhoto?:boolean;onClose:()=>void;onSelect:(p:ImportedWineData)=>void}) {
@@ -768,7 +860,7 @@ function CatalogSearchModal({initialQuery,seedImages=[],fromPhoto=false,onClose,
   function useDataWithoutPhoto(){if(foundWine)onSelect(foundWine);}
   useEffect(()=>{if(seedImages.length){setImages(seedImages);if(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]/.test(initialQuery))void searchCatalog(true,initialQuery);}else if(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]/.test(initialQuery))void searchCatalog(false,initialQuery);},[]);
   const summary=foundWine?[foundWine.vintage?String(foundWine.vintage):'',foundWine.type&&((foundWine.typeConfidence??0)>=0.8)?foundWine.type:'Tipo: revisar',foundWine.aging&&foundWine.aging!=='Sin indicar'?foundWine.aging:'',foundWine.denomination||'',foundWine.country||'',foundWine.grapes?.length?foundWine.grapes.join(', '):'',foundWine.alcohol?`${foundWine.alcohol}% vol.`:'',foundWine.pairing?`Maridaje: ${foundWine.pairing}`:''].filter(Boolean):[];
-  return <div className="modal-backdrop catalog-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="catalog-modal image-first-modal"><div className="modal-handle"/><div className="catalog-head"><div><div className="eyebrow">{fromPhoto?'BÚSQUEDA POR FOTO':'BUSCAR EN INTERNET'}</div><h2>{fromPhoto?'¿Es una de estas?':'¿Cuál es tu vino?'}</h2></div><button className="icon-button" onClick={onClose}><X/></button></div><p className="catalog-help">{fromPhoto?'Hemos usado la foto para identificar el vino. Ahora buscamos sus fotos y ficha en Bodeboca, Vivino, Petit Celler, Vinoselección, Vinatis y otras vinotecas especializadas.':'Buscamos primero en Bodeboca, Vivino, Petit Celler, Vinoselección, Vinatis y otras vinotecas especializadas.'}</p><div className="catalog-search"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void searchCatalog(false)}} placeholder="Ej. Château Margaux 2019"/><button onClick={()=>void searchCatalog(false)} disabled={loading}>{loading?'Buscando…':'Buscar'}</button></div>{error&&<div className="catalog-error">{error}</div>}{notConfigured&&<div className="catalog-setup"><strong>Falta conectar el buscador</strong><span>En Vercel añade <code>SERPER_API_KEY</code> en Environment Variables.</span></div>}{foundWine&&summary.length>0&&<div className="found-data-card"><div><Check size={18}/><strong>Datos encontrados</strong></div><p>{summary.join(' · ')}</p><small>Los podrás corregir antes de guardar.</small></div>}{loading&&<div className="catalog-loading"><div className="search-loader"/><strong>Buscando fichas de vino…</strong><span>Un momento.</span></div>}{!loading&&images.length>0&&<><div className="catalog-section-title image-title"><strong>{fromPhoto?'Coincidencias de la foto':'Elige la botella correcta'}</strong><span>{fromPhoto?'Toca la que coincida con tu botella.':'Las fuentes especializadas aparecen primero.'}</span></div><div className="catalog-image-grid bottle-search-grid">{images.map(img=><button key={img.id} disabled={!!processing} className="catalog-image-choice bottle-choice" onClick={()=>void chooseImage(img)}><div><img src={img.thumbnailUrl||img.imageUrl} alt={img.title||query}/></div><strong>{img.title||query}</strong><span>{img.source||'Internet'}</span><small>{processing===img.id?'Preparando ficha…':'Elegir esta botella'}</small></button>)}</div></>}{!loading&&foundWine&&images.length===0&&<button className="secondary use-data-only" onClick={useDataWithoutPhoto}><Check size={18}/> Usar los datos sin foto</button>}<div className="catalog-tip"><Search size={18}/><div><strong>¿No sale la correcta?</strong><span>Edita el nombre arriba. La búsqueda escrita sigue priorizando las vinotecas especializadas.</span></div></div></article></div>;
+  return <div className="modal-backdrop catalog-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="catalog-modal image-first-modal"><div className="modal-handle"/><div className="catalog-head"><div><div className="eyebrow">{fromPhoto?'BÚSQUEDA POR FOTO':'BUSCAR EN INTERNET'}</div><h2>{fromPhoto?'¿Es una de estas?':'¿Cuál es tu vino?'}</h2></div><button className="icon-button" onClick={onClose}><X/></button></div><p className="catalog-help">{fromPhoto?'Hemos usado la foto para identificar el vino. Ahora buscamos sus fotos y ficha en Bodeboca, Vivino, Petit Celler, Vinoselección, Vinatis y otras vinotecas especializadas.':'Buscamos primero en Bodeboca, Vivino, Petit Celler, Vinoselección, Vinatis y otras vinotecas especializadas.'}</p><div className="catalog-search"><Search size={19}/><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void searchCatalog(false)}} placeholder="Ej. Château Margaux 2019"/><button onClick={()=>void searchCatalog(false)} disabled={loading}>{loading?'Buscando…':'Buscar'}</button></div>{error&&<div className="catalog-error">{error}</div>}{notConfigured&&<div className="catalog-setup"><strong>Falta conectar el buscador</strong><span>En Vercel añade <code>SERPER_API_KEY</code> en Environment Variables.</span></div>}{foundWine&&summary.length>0&&<div className="found-data-card"><div><Check size={18}/><strong>Datos encontrados</strong></div><p>{summary.join(' · ')}</p><small>Los podrás corregir antes de guardar.</small></div>}{loading&&<div className="catalog-loading"><div className="search-loader"/><strong>Buscando fichas de vino…</strong><span>Un momento.</span></div>}{!loading&&images.length>0&&<><div className="catalog-section-title image-title"><strong>{fromPhoto?'Coincidencias de la foto':'Elige la botella correcta'}</strong><span>{fromPhoto?'Toca la que coincida con tu botella.':'Las fuentes especializadas aparecen primero.'}</span></div><div className="catalog-image-grid bottle-search-grid">{images.map(img=><button key={img.id} disabled={!!processing} className="catalog-image-choice bottle-choice" onClick={()=>void chooseImage(img)}><div><img src={img.thumbnailUrl||img.imageUrl} alt={img.title||query} loading="lazy" decoding="async"/></div><strong>{img.title||query}</strong><span>{img.source||'Internet'}</span><small>{processing===img.id?'Preparando ficha…':'Elegir esta botella'}</small></button>)}</div></>}{!loading&&foundWine&&images.length===0&&<button className="secondary use-data-only" onClick={useDataWithoutPhoto}><Check size={18}/> Usar los datos sin foto</button>}<div className="catalog-tip"><Search size={18}/><div><strong>¿No sale la correcta?</strong><span>Edita el nombre arriba. La búsqueda escrita sigue priorizando las vinotecas especializadas.</span></div></div></article></div>;
 }
 
 function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="field"><span>{label}</span>{children}</label>;}
@@ -800,7 +892,7 @@ function SettingsScreen({wines,cloudStatus,onBack,onImport}:{wines:Wine[];cloudS
   const topValue=(values:string[])=>{const counts=new Map<string,number>();values.filter(Boolean).forEach(v=>counts.set(v,(counts.get(v)||0)+1));return [...counts.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||'—';};
   const topDenomination=topValue(wines.map(w=>w.denomination)); const topGrape=topValue(wines.flatMap(w=>w.grapes));
   function exportCsv(){const esc=(v:unknown)=>`"${String(v??'').replace(/"/g,'""')}"`;const head=['Nombre','Bodega','Añada','Tipo','Uvas','Envejecimiento','Denominación/Appellation','Región','País','Maridaje','Botellas','Probado','Por probar','Regalo','Regalado por','Precio','Dónde lo compré/probé/vi','Graduación','Nota','Volvería a comprar','Notas'];const rows=wines.map(w=>[w.name,w.winery,w.vintage||'',w.type,w.grapes.join(' / '),displayAging(w),w.denomination,w.region,w.country,w.pairing,w.quantity,w.tried?'Sí':'No',w.wishlist?'Sí':'No',w.gifted?'Sí':'No',w.giftedBy,w.price??'',w.shop,w.alcohol??'',w.score??'',w.rebuy,w.notes]);const csv='\uFEFF'+[head,...rows].map(r=>r.map(esc).join(';')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-vinos.csv';a.click();URL.revokeObjectURL(url);}
-  function exportJson(){const blob=new Blob([JSON.stringify({app:'Celler Roig',version:15,exportedAt:new Date().toISOString(),wines},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-copia-seguridad.json';a.click();URL.revokeObjectURL(url);}
+  function exportJson(){const blob=new Blob([JSON.stringify({app:'Celler Roig',version:17,exportedAt:new Date().toISOString(),wines},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-copia-seguridad.json';a.click();URL.revokeObjectURL(url);}
   async function importJson(file?:File){if(!file)return;try{const data=JSON.parse(await file.text());onImport(Array.isArray(data)?data:data.wines);}catch{alert('No he podido leer esa copia de seguridad.');}}
   return <div className="page settings-page"><Header eyebrow="CELLER ROIG" title="Ajustes" right={<button className="icon-button" onClick={onBack}><X/></button>}/>
     <div className="settings-card"><div className="settings-line"><div><strong>Pedro</strong><span>{wines.length} vinos guardados</span></div><WineIcon/></div><div className="settings-line"><div><strong>Sincronización</strong><span>{cloudCopy} · móvil y PC se actualizan automáticamente</span></div><Archive/></div></div>
