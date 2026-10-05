@@ -27,6 +27,10 @@ export type Wine = {
   country: string;
   alcohol?: number;
   price?: number;
+  priceSource?: 'media-internet' | 'manual' | '';
+  priceMin?: number;
+  priceMax?: number;
+  priceCount?: number;
   shop: string;
   shopContext: WineStatus;
   quantity: number;

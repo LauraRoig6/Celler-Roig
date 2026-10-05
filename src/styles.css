@@ -257,3 +257,15 @@ body{overscroll-behavior-y:none}
 .ai-photo-preview span{display:block;margin-top:8px;font-size:13px;font-weight:700}
 .ai-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
 @media(max-width:560px){.ai-photo-grid{grid-template-columns:1fr}.ai-photo-preview{min-height:150px}}
+
+
+/* V20 · autofill completo con IA, precio medio y foto de botella limpia */
+.ai-modal{width:min(96vw,680px)}
+.ai-photo-grid.three{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.ai-photo-grid.three .ai-photo-preview{min-height:165px;position:relative}
+.ai-step-number{position:absolute;top:9px;left:9px;width:24px;height:24px;border-radius:50%;display:grid!important;place-items:center;background:var(--burgundy);color:#fff;font-size:11px!important;margin:0!important}
+.ai-photo-tip{margin:11px 0 2px;padding:10px 12px;border-radius:13px;background:#f5ece8;color:var(--muted);font-size:11px;line-height:1.45}
+.ai-progress{display:grid;place-items:center;text-align:center;gap:6px;margin:14px 0;padding:15px;border-radius:16px;background:#fff;border:1px solid var(--line)}
+.ai-progress strong{color:var(--burgundy);font-size:13px}.ai-progress span{font-size:10px;color:var(--muted)}
+.ai-progress .search-loader{margin-bottom:2px}
+@media(max-width:620px){.ai-photo-grid.three{grid-template-columns:1fr}.ai-photo-grid.three .ai-photo-preview{min-height:142px}.ai-modal{width:96vw}}

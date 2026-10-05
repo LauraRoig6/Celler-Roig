@@ -40,7 +40,7 @@ const sortOptions: {value: SortMode; label: string}[] = [
 const emptyForm = (): EditableWine => ({
   name: '', winery: '', vintage: undefined, type: 'Sin indicar', grapes: [], aging: 'Sin indicar', customAging: '',
   protection: 'Sin indicación', classification: '', denomination: '', region: '', country: '', alcohol: undefined,
-  price: undefined, shop: '', shopContext: 'cellar', quantity: 1, status: 'cellar', tried: false, wishlist: false, favorite: false,
+  price: undefined, priceSource: '', priceMin: undefined, priceMax: undefined, priceCount: undefined, shop: '', shopContext: 'cellar', quantity: 1, status: 'cellar', tried: false, wishlist: false, favorite: false,
   score: undefined, notes: '', rebuy: '', imageUrl: '', gifted: false, openSoon: false, pairing: '', pairingSource: '', giftedBy: '', giftDate: '',
   tastings: [], lastTastedAt: undefined,
 });
@@ -82,7 +82,7 @@ function normalizeWine(raw: Partial<Wine>): Wine {
     type: ['Tinto','Blanco','Rosado','Espumoso','Sin indicar'].includes(String(raw.type)) ? raw.type as WineType : 'Sin indicar', grapes: normalizeGrapeList(Array.isArray(raw.grapes) ? raw.grapes : []), aging: raw.aging || 'Sin indicar',
     customAging: raw.customAging || '', protection, classification: raw.classification || (protection === 'Sin indicación' ? '' : protection),
     denomination: raw.denomination || '', region: raw.region || '', country: raw.country || '', alcohol: raw.alcohol,
-    price: raw.price, shop: raw.shop || '', shopContext: raw.shopContext || (quantity > 0 ? 'cellar' : legacyTried ? 'tried' : legacyWishlist ? 'wishlist' : 'tried'), quantity, status, tried: Boolean(legacyTried), wishlist: Boolean(legacyWishlist),
+    price: raw.price, priceSource: raw.priceSource || '', priceMin: raw.priceMin, priceMax: raw.priceMax, priceCount: raw.priceCount, shop: raw.shop || '', shopContext: raw.shopContext || (quantity > 0 ? 'cellar' : legacyTried ? 'tried' : legacyWishlist ? 'wishlist' : 'tried'), quantity, status, tried: Boolean(legacyTried), wishlist: Boolean(legacyWishlist),
     favorite: Boolean(raw.favorite), score: raw.score, notes: raw.notes || '', rebuy: raw.rebuy || '', imageUrl: raw.imageUrl || '',
     gifted: Boolean(raw.gifted), openSoon: Boolean(raw.openSoon), pairing: raw.pairing || '', pairingSource: raw.pairingSource || '', giftedBy: raw.giftedBy || '', giftDate: raw.giftDate || '',
     tastings: Array.isArray(raw.tastings) ? raw.tastings : [], lastTastedAt: raw.lastTastedAt,
@@ -694,7 +694,7 @@ function WishlistScreen({wines,onOpen,onAdd}:{wines:Wine[];onOpen:(w:Wine)=>void
   </div>;
 }
 
-type ImportedWineData={name?:string;winery?:string;vintage?:number;type?:WineType;typeConfidence?:number;grapes?:string[];aging?:Aging;protection?:Protection;classification?:string;denomination?:string;region?:string;country?:string;alcohol?:number;price?:number;imageUrl?:string;sourceUrl?:string;sourceTitle?:string;fieldsFound?:number;categories?:string;rawText?:string;pairing?:string;pairingSource?:string;};
+type ImportedWineData={name?:string;winery?:string;vintage?:number;type?:WineType;typeConfidence?:number;grapes?:string[];aging?:Aging;protection?:Protection;classification?:string;denomination?:string;region?:string;country?:string;alcohol?:number;price?:number;priceSource?:'media-internet'|'manual'|'';priceMin?:number;priceMax?:number;priceCount?:number;imageUrl?:string;sourceUrl?:string;sourceTitle?:string;fieldsFound?:number;categories?:string;rawText?:string;pairing?:string;pairingSource?:string;};
 type WineImageResult={id:string;title:string;imageUrl:string;thumbnailUrl?:string;pageUrl?:string;source?:string;};
 type WineSearchSource={id?:string;title:string;url:string;snippet?:string;source?:string};
 
@@ -736,8 +736,9 @@ function inferWineType(categories=''):WineType|undefined{const value=categories.
 function inferAgingText(text=''):Aging|undefined{const value=text.toLowerCase();if(value.includes('gran reserva'))return'Gran Reserva';if(/\breserva\b/.test(value))return'Reserva';if(/\bcrianza\b/.test(value))return'Crianza';if(/\broble\b|barrica/.test(value))return'Roble';if(/\bjoven\b/.test(value))return'Joven';return undefined;}
 
 function resolveImportedType(product: ImportedWineData): WineType | undefined {
-  const raw = `${product.name||''} ${product.categories||''} ${product.rawText||''}`;
-  const explicit = inferWineType(raw);
+  const strongText = `${product.name||''} ${product.categories||''}`;
+  const raw = `${strongText} ${product.rawText||''}`;
+  const explicit = inferWineType(strongText);
   if (explicit) return explicit;
   const candidate = product.type;
   const confidence = product.typeConfidence ?? 0;
@@ -756,7 +757,7 @@ function resolveImportedType(product: ImportedWineData): WineType | undefined {
 }
 
 function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{form:EditableWine;setForm:React.Dispatch<React.SetStateAction<EditableWine>>;save:()=>void;editing:boolean;moreInfo:boolean;setMoreInfo:(v:boolean)=>void;onCancel:()=>void;}) {
-  const [catalogOpen,setCatalogOpen]=useState(false); const [catalogInitial,setCatalogInitial]=useState(''); const [catalogSeedImages,setCatalogSeedImages]=useState<WineImageResult[]>([]); const [catalogFromPhoto,setCatalogFromPhoto]=useState(false); const [photoMessage,setPhotoMessage]=useState(''); const [photoBusy,setPhotoBusy]=useState(false); const [dictating,setDictating]=useState(false); const [barcodeOpen,setBarcodeOpen]=useState(false); const [reviewOpen,setReviewOpen]=useState(false); const [reviewNeeded,setReviewNeeded]=useState(false); const [autofillSource,setAutofillSource]=useState(''); const [aiOpen,setAiOpen]=useState(false);
+  const [catalogOpen,setCatalogOpen]=useState(false); const [catalogInitial,setCatalogInitial]=useState(''); const [catalogSeedImages,setCatalogSeedImages]=useState<WineImageResult[]>([]); const [catalogFromPhoto,setCatalogFromPhoto]=useState(false); const [photoMessage,setPhotoMessage]=useState(''); const [photoBusy,setPhotoBusy]=useState(false); const [dictating,setDictating]=useState(false); const [barcodeOpen,setBarcodeOpen]=useState(false); const [reviewOpen,setReviewOpen]=useState(false); const [reviewNeeded,setReviewNeeded]=useState(false); const [autofillSource,setAutofillSource]=useState(''); const [aiOpen,setAiOpen]=useState(false); const [aiStage,setAiStage]=useState('');
   async function pickImage(file?:File){
     if(!file)return;
     setPhotoBusy(true);
@@ -787,22 +788,28 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
   }
   function openCatalog(){setCatalogSeedImages([]);setCatalogFromPhoto(false);setCatalogInitial([form.name,form.winery,form.vintage].filter(Boolean).join(' '));setCatalogOpen(true);}
   function useImportedWine(product:ImportedWineData){
-    const raw=`${product.name||''} ${product.categories||''}`;
     const inferredVintage=product.vintage||Number(product.name?.match(/\b(19|20)\d{2}\b/)?.[0])||undefined;
-    const explicitType=inferWineType(raw);
-    const confidentType=(product.type&&((product.typeConfidence??0)>=0.8))?product.type:explicitType;
+    const resolvedType=resolveImportedType(product);
     const inferredAging=product.aging&&product.aging!=='Sin indicar'?product.aging:inferAgingText(`${product.name||''} ${product.rawText||''}`);
     const importedGrapes=normalizeGrapeList(product.grapes||[]);
-    setForm(f=>({...f,
-      name:product.name?.trim()||f.name, winery:product.winery?.trim()||f.winery, vintage:inferredVintage||f.vintage,
-      type:confidentType||f.type, grapes:importedGrapes.length?importedGrapes:f.grapes, aging:inferredAging||f.aging,
-      protection:product.protection||f.protection, classification:product.classification?.trim()||f.classification,
-      denomination:product.denomination?.trim()||f.denomination, region:product.region?.trim()||f.region,
-      country:product.country?.trim()||f.country, alcohol:product.alcohol||f.alcohol, price:product.price||f.price,
-      imageUrl:product.imageUrl||f.imageUrl,
-      pairing:product.pairing?.trim() || f.pairing || pairingSuggestion(confidentType||f.type, importedGrapes.length?importedGrapes:f.grapes, inferredAging||f.aging),
-      pairingSource:product.pairing?.trim() ? (product.pairingSource||'web') : (f.pairingSource || (pairingSuggestion(confidentType||f.type, importedGrapes.length?importedGrapes:f.grapes, inferredAging||f.aging)?'sugerencia':'')),
-    }));
+    setForm(f=>{
+      const nextType=resolvedType||f.type;
+      const nextGrapes=importedGrapes.length?importedGrapes:f.grapes;
+      const nextAging=inferredAging||f.aging;
+      const suggested=autoPairingForForm(nextType,nextGrapes,nextAging);
+      const incomingPair=(nextType!=='Sin indicar'&&nextGrapes.length>0)?(product.pairing?.trim()||''):'';
+      const protectedPair=['manual','web','label'].includes(f.pairingSource);
+      return {...f,
+        name:product.name?.trim()||f.name,winery:product.winery?.trim()||f.winery,vintage:inferredVintage||f.vintage,
+        type:nextType,grapes:nextGrapes,aging:nextAging,
+        protection:product.protection||f.protection,classification:'',denomination:product.denomination?.trim()||f.denomination,
+        region:product.region?.trim()||f.region,country:product.country?.trim()||f.country,alcohol:product.alcohol??f.alcohol,
+        price:product.price??f.price,priceSource:product.priceSource??f.priceSource,priceMin:product.priceMin??f.priceMin,priceMax:product.priceMax??f.priceMax,priceCount:product.priceCount??f.priceCount,
+        imageUrl:product.imageUrl||f.imageUrl,
+        pairing:incomingPair|| (protectedPair?f.pairing:suggested),
+        pairingSource:incomingPair?(product.pairingSource||'web'):(protectedPair?f.pairingSource:(suggested?'sugerencia':'')),
+      };
+    });
     setMoreInfo(true);setCatalogOpen(false);setReviewNeeded(true);setAutofillSource(product.sourceTitle?.trim()||'búsqueda en Internet');
   }
   function requestSave(){
@@ -814,36 +821,37 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
     setBarcodeOpen(false);setCatalogSeedImages([]);setCatalogFromPhoto(false);setCatalogInitial(code);setPhotoMessage(`Código ${code} leído. Buscando la botella y su ficha…`);setCatalogOpen(true);
   }
 
-  async function useAiAutofill(front?:File, back?:File){
-    if(!front){ setPhotoMessage('Haz al menos una foto de la etiqueta delantera.'); return; }
-    setPhotoBusy(true);
-    setPhotoMessage(back ? 'Leyendo las dos etiquetas con IA…' : 'Leyendo la etiqueta con IA…');
-    try {
-      const frontImageDataUrl = await preparePhotoForLens(front);
-      const backImageDataUrl = back ? await preparePhotoForLens(back) : '';
-      const res = await fetch('/api/wine-autofill', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ frontImageDataUrl, backImageDataUrl })
-      });
-      const data = await res.json();
-      if(!res.ok) throw new Error(data.error || 'No he podido leer las etiquetas.');
-      const wine = data?.wine as ImportedWineData | undefined;
-      if(!wine?.name && !wine?.winery && !wine?.vintage) throw new Error('No he podido sacar suficientes datos útiles de la etiqueta.');
-      useImportedWine({ ...(wine||{}), sourceTitle: String(data?.source || 'IA desde etiquetas') });
+  async function useAiAutofill(front?:File, back?:File, bottle?:File){
+    if(!front||!back||!bottle){setPhotoMessage('Haz las tres fotos: delantera, trasera y botella entera.');return;}
+    setPhotoBusy(true);setAiStage('1/3 · Leyendo las etiquetas…');
+    try{
+      const [frontImageDataUrl,backImageDataUrl,bottleImageDataUrl]=await Promise.all([preparePhotoForLens(front),preparePhotoForLens(back),preparePhotoForLens(bottle)]);
+      setAiStage('2/3 · Completando ficha y comparando precios…');
+      const res=await fetch('/api/wine-autofill',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({frontImageDataUrl,backImageDataUrl})});
+      const data=await res.json();
+      if(!res.ok)throw new Error(data.error||'No he podido completar la ficha.');
+      const wine=data?.wine as ImportedWineData|undefined;
+      if(!wine?.name&&!wine?.winery&&!wine?.vintage)throw new Error('No he podido identificar el vino con suficiente seguridad.');
+      let fallbackImage='';
+      if(data?.webImageUrl){try{fallbackImage=await prepareBottleImageFromUrl(String(data.webImageUrl));}catch{fallbackImage=String(data.webImageUrl);}}
+      useImportedWine({...wine,imageUrl:fallbackImage||wine?.imageUrl,sourceTitle:'IA + Internet'});
+      const identity=[wine?.name,wine?.winery,wine?.vintage].filter(Boolean).join(' ');
+      setAiStage('3/3 · Dejando la botella lista para la estantería…');
+      try{
+        const imgRes=await fetch('/api/wine-image-cleanup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bottleImageDataUrl,frontImageDataUrl,backImageDataUrl,identity})});
+        const imgData=await imgRes.json();
+        if(imgRes.ok&&imgData?.imageDataUrl)setForm(f=>({...f,imageUrl:String(imgData.imageDataUrl)}));
+      }catch{}
       setAiOpen(false);
-      const query = [wine?.name, wine?.winery, wine?.vintage].filter(Boolean).join(' ');
-      setPhotoMessage(query ? `He rellenado la ficha a partir de las etiquetas. Si quieres, ahora puedes usar “Buscar botella y datos” para encontrar una foto mejor de ${query}.` : 'He rellenado la ficha a partir de las etiquetas. Revisa los datos antes de guardar.');
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'No he podido leer las etiquetas.';
-      setPhotoMessage(message);
-      throw e;
-    } finally {
-      setPhotoBusy(false);
-    }
+      const priceText=wine?.price&&wine?.priceCount?` Precio medio: ${Number(wine.price).toFixed(2)} € (${wine.priceCount} ${wine.priceCount===1?'tienda':'tiendas'}).`:'';
+      setPhotoMessage(`Ficha completada con IA + Internet.${priceText} Revisa los datos antes de guardar.`);
+    }catch(e){
+      const message=e instanceof Error?e.message:'No he podido completar la ficha.';setPhotoMessage(message);setAiStage('');throw e;
+    }finally{setPhotoBusy(false);setAiStage('');}
   }
   function dictate(){const w=window as any;const Speech=w.SpeechRecognition||w.webkitSpeechRecognition;if(!Speech){alert('El dictado no está disponible en este navegador. Puedes usar el micrófono del teclado del móvil.');return;}const r=new Speech();r.lang='es-ES';r.interimResults=false;r.maxAlternatives=1;setDictating(true);r.onresult=(e:any)=>{const text=e.results?.[0]?.[0]?.transcript||'';setForm(f=>({...f,notes:[f.notes,text].filter(Boolean).join(f.notes?' ':'')}));};r.onerror=()=>setDictating(false);r.onend=()=>setDictating(false);r.start();}
   return <div className="page add-page"><div className="add-top"><button className="icon-button" onClick={onCancel}><X/></button><div><div className="eyebrow">{editing?'EDITAR':'NUEVO VINO'}</div><h1>{editing?'Editar vino':'Añadir vino'}</h1></div><button className="save-top" onClick={requestSave}>Guardar</button></div>
-    <div className="image-picker"><BottleVisual wine={{...form,id:'preview',createdAt:'',manualOrder:0}}/><div className="image-actions"><button type="button" className="secondary photo-primary" onClick={()=>setAiOpen(true)}><Camera size={18}/>{photoBusy?'Leyendo…':'Leer etiquetas con IA'}</button><button type="button" className="ghost-button" onClick={openCatalog}><Search size={18}/> Buscar botella y datos</button><button type="button" className="ghost-button" onClick={()=>setBarcodeOpen(true)}><ScanBarcode size={18}/> Escanear código</button></div><p>{photoMessage||'Haz una foto de la etiqueta delantera y, si puedes, otra de la trasera. La IA lee lo que aparece en la etiqueta y rellena la ficha; después, si quieres, puedes buscar una foto limpia de la botella.'}</p></div>
+    <div className="image-picker"><BottleVisual wine={{...form,id:'preview',createdAt:'',manualOrder:0}}/><div className="image-actions"><button type="button" className="secondary photo-primary" onClick={()=>setAiOpen(true)}><Camera size={18}/>{photoBusy?'Leyendo…':'Leer etiquetas con IA'}</button><button type="button" className="ghost-button" onClick={openCatalog}><Search size={18}/> Buscar botella y datos</button><button type="button" className="ghost-button" onClick={()=>setBarcodeOpen(true)}><ScanBarcode size={18}/> Escanear código</button></div><p>{photoMessage||'Haz tres fotos y deja que la IA complete la ficha, busque los datos que falten, calcule un precio medio y prepare la botella para la estantería.'}</p></div>
 
     <div className="form-card essentials-card">
       <Field label="Nombre del vino *"><input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="Ej. Muga Reserva"/></Field>
@@ -873,7 +881,7 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
 
     <button className="more-toggle" onClick={()=>setMoreInfo(!moreInfo)}><span><SlidersHorizontal size={19}/> Más información</span><ChevronDown className={moreInfo?'rotated':''}/></button>
     {moreInfo&&<div className="form-card advanced compact-advanced">
-      <div className="two-cols"><Field label="Precio (€)"><input type="number" inputMode="decimal" step="0.01" value={form.price??''} onChange={e=>setForm(f=>({...f,price:e.target.value?Number(e.target.value):undefined}))}/></Field><Field label={shopLabelForStatus(form.shopContext || form.status)}><input value={form.shop} onChange={e=>setForm(f=>({...f,shop:e.target.value}))} placeholder={(form.shopContext||form.status)==='cellar'?'Ej. Bodeboca':(form.shopContext||form.status)==='tried'?'Ej. Restaurante / casa de…':'Ej. Vinatis / restaurante / Instagram'}/></Field></div>
+      <div className="two-cols"><Field label={form.priceSource==='media-internet'?"Precio medio online (€)":"Precio (€)"}><input type="number" inputMode="decimal" step="0.01" value={form.price??''} onChange={e=>setForm(f=>({...f,price:e.target.value?Number(e.target.value):undefined,priceSource:e.target.value?'manual':'',priceMin:undefined,priceMax:undefined,priceCount:undefined}))}/>{form.priceSource==='media-internet'&&form.priceCount? <small className="field-hint">Media de {form.priceCount} {form.priceCount===1?'tienda':'tiendas'}{form.priceMin!=null&&form.priceMax!=null?` · ${form.priceMin.toFixed(2)}–${form.priceMax.toFixed(2)} €`:''}</small>:null}</Field><Field label={shopLabelForStatus(form.shopContext || form.status)}><input value={form.shop} onChange={e=>setForm(f=>({...f,shop:e.target.value}))} placeholder={(form.shopContext||form.status)==='cellar'?'Ej. Bodeboca':(form.shopContext||form.status)==='tried'?'Ej. Restaurante / casa de…':'Ej. Vinatis / restaurante / Instagram'}/></Field></div>
       <Field label="Graduación (% vol.)"><input type="number" inputMode="decimal" step="0.1" value={form.alcohol??''} onChange={e=>setForm(f=>({...f,alcohol:e.target.value?Number(e.target.value):undefined}))}/></Field>
 
       <div className="two-cols rating-row"><Field label="Puntuación (0–10)"><input type="number" inputMode="decimal" min="0" max="10" step="0.1" value={form.score??''} onChange={e=>setForm(f=>({...f,score:e.target.value?Math.min(10,Math.max(0,Number(e.target.value))):undefined}))}/></Field><Field label="¿Lo comprarías otra vez?"><div className="choice-grid three rebuy-choices">{(['Sí','Quizá','No'] as const).map(x=><button type="button" key={x} className={form.rebuy===x?'choice active':'choice'} onClick={()=>setForm(f=>({...f,rebuy:x}))}>{x}</button>)}</div></Field></div>
@@ -881,27 +889,22 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
     </div>}
     <button className="primary save-bottom" onClick={requestSave}>{editing?'Guardar cambios':'Guardar vino'}</button>
     {catalogOpen&&<CatalogSearchModal initialQuery={catalogInitial} seedImages={catalogSeedImages} fromPhoto={catalogFromPhoto} onClose={()=>setCatalogOpen(false)} onSelect={useImportedWine}/> }
-    {aiOpen&&<AiAutofillModal busy={photoBusy} onClose={()=>setAiOpen(false)} onUse={useAiAutofill}/>}
+    {aiOpen&&<AiAutofillModal busy={photoBusy} stage={aiStage} onClose={()=>!photoBusy&&setAiOpen(false)} onUse={useAiAutofill}/>}
     {barcodeOpen&&<BarcodeScannerModal onClose={()=>setBarcodeOpen(false)} onFound={useBarcode}/>}
     {reviewOpen&&<SaveReviewModal form={form} source={autofillSource} onBack={()=>setReviewOpen(false)} onConfirm={()=>{setReviewOpen(false);setReviewNeeded(false);save();}}/>}
   </div>;
 }
 
 
-function AiAutofillModal({busy,onClose,onUse}:{busy:boolean;onClose:()=>void;onUse:(front?:File,back?:File)=>Promise<void>;}) {
-  const [front,setFront]=useState<File>();
-  const [back,setBack]=useState<File>();
-  const [frontPreview,setFrontPreview]=useState('');
-  const [backPreview,setBackPreview]=useState('');
-  const [error,setError]=useState('');
-  useEffect(()=>{let cancelled=false; if(!front){setFrontPreview(''); return;} fileToDataUrl(front).then(url=>{if(!cancelled)setFrontPreview(url);}).catch(()=>{if(!cancelled)setFrontPreview('');}); return ()=>{cancelled=true;};},[front]);
-  useEffect(()=>{let cancelled=false; if(!back){setBackPreview(''); return;} fileToDataUrl(back).then(url=>{if(!cancelled)setBackPreview(url);}).catch(()=>{if(!cancelled)setBackPreview('');}); return ()=>{cancelled=true;};},[back]);
-  async function submit(){
-    if(!front){setError('Necesito al menos la foto delantera.');return;}
-    setError('');
-    try{await onUse(front,back);}catch(e){setError(e instanceof Error?e.message:'No he podido leer las etiquetas.');}
-  }
-  return <div className="modal-backdrop review-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="save-review-modal ai-modal"><div className="modal-handle"/><div className="catalog-head"><div><div className="eyebrow">AUTOFILL CON IA</div><h2>Leer etiquetas</h2></div><button className="icon-button" onClick={onClose}><X/></button></div><p className="catalog-help">Haz una foto clara de la etiqueta delantera y otra de la trasera. La IA rellenará nombre, bodega, añada, tipo, uvas, graduación y lo que vea en la etiqueta. Lo demás lo podéis revisar después.</p><div className="ai-photo-grid"><label className="ai-photo-slot"><div className="ai-photo-preview">{frontPreview?<img src={frontPreview} alt="Etiqueta delantera"/>:<><Camera size={26}/><span>Etiqueta delantera *</span></>}</div><input type="file" accept="image/*" capture="environment" onChange={e=>setFront(e.target.files?.[0])}/><strong>{front?front.name:'Hacer foto frontal'}</strong></label><label className="ai-photo-slot"><div className="ai-photo-preview">{backPreview?<img src={backPreview} alt="Etiqueta trasera"/>:<><Camera size={26}/><span>Etiqueta trasera</span></>}</div><input type="file" accept="image/*" capture="environment" onChange={e=>setBack(e.target.files?.[0])}/><strong>{back?back.name:'Hacer foto trasera'}</strong></label></div>{error&&<div className="catalog-error">{error}</div>}<div className="ai-modal-actions"><button className="ghost-button" type="button" onClick={onClose}>Cancelar</button><button className="primary" type="button" onClick={submit} disabled={busy||!front}>{busy?'Leyendo etiquetas…':'Usar IA para rellenar'}</button></div></article></div>;
+function AiAutofillModal({busy,stage,onClose,onUse}:{busy:boolean;stage:string;onClose:()=>void;onUse:(front?:File,back?:File,bottle?:File)=>Promise<void>;}) {
+  const [front,setFront]=useState<File>();const [back,setBack]=useState<File>();const [bottle,setBottle]=useState<File>();
+  const [frontPreview,setFrontPreview]=useState('');const [backPreview,setBackPreview]=useState('');const [bottlePreview,setBottlePreview]=useState('');const [error,setError]=useState('');
+  useEffect(()=>{let c=false;if(!front){setFrontPreview('');return;}fileToDataUrl(front).then(u=>!c&&setFrontPreview(u)).catch(()=>{});return()=>{c=true}},[front]);
+  useEffect(()=>{let c=false;if(!back){setBackPreview('');return;}fileToDataUrl(back).then(u=>!c&&setBackPreview(u)).catch(()=>{});return()=>{c=true}},[back]);
+  useEffect(()=>{let c=false;if(!bottle){setBottlePreview('');return;}fileToDataUrl(bottle).then(u=>!c&&setBottlePreview(u)).catch(()=>{});return()=>{c=true}},[bottle]);
+  async function submit(){if(!front||!back||!bottle){setError('Haz las tres fotos para que la ficha quede lo más completa posible.');return;}setError('');try{await onUse(front,back,bottle)}catch(e){setError(e instanceof Error?e.message:'No he podido analizar el vino.')}}
+  const Slot=({n,title,file,preview,setFile}:{n:string;title:string;file?:File;preview:string;setFile:(f?:File)=>void})=><label className="ai-photo-slot"><div className="ai-photo-preview">{preview?<img src={preview} alt={title}/>:<><span className="ai-step-number">{n}</span><Camera size={25}/><span>{title}</span></>}</div><input disabled={busy} type="file" accept="image/*" capture="environment" onChange={e=>setFile(e.target.files?.[0])}/><strong>{file?'✓ Foto hecha':'Hacer foto'}</strong></label>;
+  return <div className="modal-backdrop review-backdrop" onMouseDown={e=>{if(!busy&&e.currentTarget===e.target)onClose()}}><article className="save-review-modal ai-modal"><div className="modal-handle"/><div className="catalog-head"><div><div className="eyebrow">AUTOFILL COMPLETO</div><h2>Fotografiar el vino</h2></div><button className="icon-button" disabled={busy} onClick={onClose}><X/></button></div><p className="catalog-help">Tres fotos y Celler Roig hace el resto: lee las etiquetas, completa lo que falte en Internet, compara precios y prepara una imagen limpia de la botella.</p><div className="ai-photo-grid three"><Slot n="1" title="Etiqueta delantera" file={front} preview={frontPreview} setFile={setFront}/><Slot n="2" title="Etiqueta trasera" file={back} preview={backPreview} setFile={setBack}/><Slot n="3" title="Botella entera" file={bottle} preview={bottlePreview} setFile={setBottle}/></div><div className="ai-photo-tip">Para la botella entera, intenta que se vea completa. No pasa nada si sale tu mano, la mesa o el fondo: la IA intentará quitarlos.</div>{error&&<div className="catalog-error">{error}</div>}{busy&&<div className="ai-progress"><div className="search-loader"/><strong>{stage||'Analizando vino…'}</strong><span>Puede tardar un poco, sobre todo al preparar la imagen.</span></div>}<div className="ai-modal-actions"><button className="ghost-button" type="button" disabled={busy} onClick={onClose}>Cancelar</button><button className="primary" type="button" onClick={submit} disabled={busy||!front||!back||!bottle}>{busy?'Trabajando…':'✨ Completar ficha'}</button></div></article></div>;
 }
 
 
@@ -980,10 +983,17 @@ function BarcodeScannerModal({onClose,onFound}:{onClose:()=>void;onFound:(code:s
 function SaveReviewModal({form,source,onBack,onConfirm}:{form:EditableWine;source:string;onBack:()=>void;onConfirm:()=>void}) {
   const rows=[
     ['Nombre',form.name||'Revisar',Boolean(form.name)],
+    ['Bodega',form.winery||'Sin indicar',Boolean(form.winery)],
     ['Añada',form.vintage?String(form.vintage):'Sin indicar',Boolean(form.vintage)],
     ['Tipo',form.type==='Sin indicar'?'Revisar':form.type,form.type!=='Sin indicar'],
-    ['Denominación',form.denomination||'Sin indicar',Boolean(form.denomination)],
     ['Uva / variedades',form.grapes.length?form.grapes.join(', '):'Sin indicar',form.grapes.length>0],
+    ['Envejecimiento',form.aging==='Sin indicar'?'Sin indicar':displayAging({...form,id:'review',createdAt:'',manualOrder:0}),form.aging!=='Sin indicar'],
+    ['Denominación',form.denomination||'Sin indicar',Boolean(form.denomination)],
+    ['Región',form.region||'Sin indicar',Boolean(form.region)],
+    ['País',form.country||'Sin indicar',Boolean(form.country)],
+    ['Graduación',form.alcohol!=null?`${form.alcohol}% vol.`:'Sin indicar',form.alcohol!=null],
+    ['Maridaje',form.pairing||'Sin indicar',Boolean(form.pairing)],
+    ['Precio medio',form.price!=null?`${form.price.toFixed(2)} €${form.priceCount?` · ${form.priceCount} tiendas`:''}`:'Sin indicar',form.price!=null],
   ] as const;
   const warnings=rows.filter(([, ,ok])=>!ok).length;
   return <div className="modal-backdrop review-backdrop"><article className="save-review-modal"><div className="modal-handle"/><div className="review-title"><div className={warnings?'review-icon warning':'review-icon'}>{warnings?<AlertTriangle/>:<CheckCircle2/>}</div><div><div className="eyebrow">ANTES DE GUARDAR</div><h2>Revisa la ficha</h2></div></div><p>{warnings?'Hay algún dato importante que no hemos podido confirmar. Puedes guardarlo igualmente o corregirlo.':'Los datos principales parecen completos. Comprueba que corresponden a tu botella.'}</p>{source&&<small className="review-source">Autorrellenado desde {source}</small>}<div className="review-list">{rows.map(([label,value,ok])=><div key={label} className={ok?'review-row':'review-row missing'}><span>{label}</span><strong>{value}</strong>{ok?<Check size={16}/>:<AlertTriangle size={16}/>}</div>)}</div><div className="review-actions"><button className="secondary" onClick={onBack}>Volver y corregir</button><button className="primary" onClick={onConfirm}>Guardar así</button></div></article></div>;
@@ -1045,7 +1055,7 @@ function WineModal({wine,allWines,onOpenWine,onClose,onPatch,onEdit,onDelete,onM
   function addTasting(){const tasting:Tasting={id:crypto.randomUUID(),date:new Date().toISOString(),score:tasteScore?Math.min(10,Math.max(0,Number(tasteScore))):undefined,notes:tasteNotes.trim()};const list=[...(wine.tastings||[]),tasting];onPatch(wine.id,{tried:true,status:wine.quantity>0?'cellar':'tried',score:tasting.score??wine.score,notes:tasting.notes||wine.notes,tastings:list,lastTastedAt:tasting.date});setShowTasting(false);setTasteNotes('');}
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="wine-modal"><div className="modal-handle"/><div className="modal-top"><button className="icon-button" onClick={onClose}><X/></button><button className="icon-button" onClick={()=>onEdit(wine)}><Pencil/></button></div><div className="modal-hero"><button className="modal-bottle modal-bottle-zoom" onClick={()=>wine.imageUrl&&setImageOpen(true)} aria-label={wine.imageUrl?'Ampliar imagen de la botella':'Botella sin imagen'}><BottleVisual wine={wine}/></button><div className="modal-title"><span>{wine.denomination||wine.country||wine.type}</span><h2>{wine.name}</h2><p>{wine.winery}{wine.vintage?` · ${wine.vintage}`:''}</p><div className="modal-badges">{wine.gifted&&<span><Gift size={14}/> Regalo</span>}{wine.tried&&<span><Check size={14}/> Probado</span>}{wine.wishlist&&<span><Bookmark size={14}/> En deseos</span>}</div><div className="quick-flags"><button className={wine.favorite?'flag-icon-button active':'flag-icon-button'} onClick={()=>onPatch(wine.id,{favorite:!wine.favorite})} aria-label={wine.favorite?'Quitar de favoritos':'Marcar como favorito'} title="Favorito"><Heart size={20} fill={wine.favorite?'currentColor':'none'}/></button><button className={wine.openSoon?'flag-icon-button active':'flag-icon-button'} onClick={()=>onPatch(wine.id,{openSoon:!wine.openSoon})} aria-label={wine.openSoon?'Quitar de abrir pronto':'Marcar para abrir pronto'} title="Abrir pronto"><Clock3 size={20}/></button>{!pureWishlist&&<button className={wine.wishlist?'flag-icon-button active':'flag-icon-button'} onClick={()=>onPatch(wine.id,{wishlist:!wine.wishlist,status:wine.quantity>0?'cellar':wine.tried?'tried':'wishlist'})} aria-label={wine.wishlist?'Quitar de lista de deseos':'Añadir a lista de deseos'} title="Lista de deseos"><Bookmark size={20} fill={wine.wishlist?'currentColor':'none'}/></button>}</div></div></div>
     {pureWishlist?<div className="wishlist-actions-modal"><button className="primary modal-main-action" onClick={()=>onMoveToCellar(wine)}><ShoppingBag size={20}/> Ya lo tengo</button><button className="secondary modal-main-action" onClick={()=>onPatch(wine.id,{tried:true,status:'tried',quantity:0,lastTastedAt:new Date().toISOString()})}><CheckCircle2 size={20}/> Ya lo he probado</button></div>:<>{wine.wishlist&&wine.quantity===0&&<button className="primary wishlist-buy-button" onClick={()=>onMoveToCellar(wine)}><ShoppingBag size={19}/> Añadir a mi Vinoteca</button>}<div className="score-stock"><div><span>Tu nota</span><strong>{wine.score??'—'}<small>/10</small></strong></div><div><span>En casa</span><strong>{wine.quantity}<small>{wine.quantity===1?' botella':' botellas'}</small></strong></div></div>{wine.quantity>0&&<div className="modal-actions"><div className="qty-control"><button onClick={()=>onPatch(wine.id,{quantity:Math.max(0,wine.quantity-1),status:wine.quantity<=1?'tried':'cellar',tried:wine.quantity<=1?true:wine.tried})}><Minus/></button><strong>{wine.quantity}</strong><button onClick={()=>onPatch(wine.id,{quantity:wine.quantity+1,status:'cellar'})}><Plus/></button></div><button className="primary drink-button" onClick={()=>onConsume(wine)}><GlassWater size={19}/> He bebido una</button></div>}<button className="secondary tasting-action" onClick={()=>setShowTasting(!showTasting)}><Star size={18}/>{wine.tried?'Registrar otra cata':'Marcar como probado'}</button>{showTasting&&<div className="tasting-editor"><div className="two-cols"><Field label="Nota (0–10)"><input type="number" min="0" max="10" step="0.1" value={tasteScore} onChange={e=>setTasteScore(e.target.value)}/></Field><Field label="Fecha"><input type="text" value={new Date().toLocaleDateString('es-ES')} readOnly/></Field></div><Field label="Comentario"><textarea rows={3} value={tasteNotes} onChange={e=>setTasteNotes(e.target.value)} placeholder="Qué te ha parecido…"/></Field><button className="primary" onClick={addTasting}>Guardar cata</button></div>}</>}
-    <div className="details-card"><Info label="Tipo" value={wine.type}/><Info label="Uva / variedades" value={wine.grapes.join(', ')||'—'}/><Info label="Envejecimiento" value={displayAging(wine)}/><Info label="Denominación / Appellation" value={wine.denomination||'—'}/>{wine.region&&<Info label="Región" value={wine.region}/>} {wine.country&&<Info label="País" value={wine.country}/>} {wine.pairing&&<Info label="Maridaje" value={wine.pairing}/>} {wine.price!=null&&<Info label="Precio" value={`${wine.price.toFixed(2)} €`}/>} {wine.shop&&<Info label={shopLabelForStatus(wine.shopContext || (wine.wishlist?'wishlist':wine.quantity>0?'cellar':'tried'))} value={wine.shop}/>} {wine.alcohol!=null&&<Info label="Graduación" value={`${wine.alcohol}% vol.`}/>}</div>
+    <div className="details-card"><Info label="Tipo" value={wine.type}/><Info label="Uva / variedades" value={wine.grapes.join(', ')||'—'}/><Info label="Envejecimiento" value={displayAging(wine)}/><Info label="Denominación / Appellation" value={wine.denomination||'—'}/>{wine.region&&<Info label="Región" value={wine.region}/>} {wine.country&&<Info label="País" value={wine.country}/>} {wine.pairing&&<Info label="Maridaje" value={wine.pairing}/>} {wine.price!=null&&<Info label={wine.priceSource==='media-internet'?'Precio medio online':'Precio'} value={`${wine.price.toFixed(2)} €${wine.priceSource==='media-internet'&&wine.priceCount?` · ${wine.priceCount} tiendas`:''}`}/>} {wine.shop&&<Info label={shopLabelForStatus(wine.shopContext || (wine.wishlist?'wishlist':wine.quantity>0?'cellar':'tried'))} value={wine.shop}/>} {wine.alcohol!=null&&<Info label="Graduación" value={`${wine.alcohol}% vol.`}/>}</div>
     {wine.gifted&&<div className="gift-card"><Gift size={19}/><div><strong>Esta botella fue un regalo</strong><span>{wine.giftedBy?`De ${wine.giftedBy}`:'Sin indicar quién'}{wine.giftDate?` · ${formatDate(wine.giftDate)}`:''}</span></div></div>}
     {(wine.notes||wine.rebuy)&&<div className="notes-card">{wine.notes&&<><span>Tu opinión</span><p>{wine.notes}</p></>}{wine.rebuy&&<div className="rebuy"><Check size={17}/> Lo compraría otra vez: <b>{wine.rebuy}</b></div>}</div>}
     {wine.tastings?.length>0&&<div className="history-card"><span>Historial de catas</span>{[...wine.tastings].reverse().slice(0,4).map(t=><div key={t.id} className="history-row"><div><Clock3 size={15}/><strong>{formatDate(t.date)}</strong></div>{t.score!=null&&<b>{t.score}/10</b>}{t.notes&&<p>{t.notes}</p>}</div>)}</div>}
@@ -1065,7 +1075,7 @@ function SettingsScreen({wines,cloudStatus,onBack,onImport}:{wines:Wine[];cloudS
   const topValue=(values:string[])=>{const counts=new Map<string,number>();values.filter(Boolean).forEach(v=>counts.set(v,(counts.get(v)||0)+1));return [...counts.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||'—';};
   const topDenomination=topValue(wines.map(w=>w.denomination)); const topGrape=topValue(wines.flatMap(w=>w.grapes));
   function exportCsv(){const esc=(v:unknown)=>`"${String(v??'').replace(/"/g,'""')}"`;const head=['Nombre','Bodega','Añada','Tipo','Uvas','Envejecimiento','Denominación/Appellation','Región','País','Maridaje','Botellas','Probado','Lista de deseos','Regalo','Regalado por','Precio','Dónde lo compré/probé/vi','Graduación','Nota','Volvería a comprar','Notas'];const rows=wines.map(w=>[w.name,w.winery,w.vintage||'',w.type,w.grapes.join(' / '),displayAging(w),w.denomination,w.region,w.country,w.pairing,w.quantity,w.tried?'Sí':'No',w.wishlist?'Sí':'No',w.gifted?'Sí':'No',w.giftedBy,w.price??'',w.shop,w.alcohol??'',w.score??'',w.rebuy,w.notes]);const csv='\uFEFF'+[head,...rows].map(r=>r.map(esc).join(';')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-vinos.csv';a.click();URL.revokeObjectURL(url);}
-  function exportJson(){const blob=new Blob([JSON.stringify({app:'Celler Roig',version:18,exportedAt:new Date().toISOString(),wines},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-copia-seguridad.json';a.click();URL.revokeObjectURL(url);}
+  function exportJson(){const blob=new Blob([JSON.stringify({app:'Celler Roig',version:20,exportedAt:new Date().toISOString(),wines},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-copia-seguridad.json';a.click();URL.revokeObjectURL(url);}
   async function importJson(file?:File){if(!file)return;try{const data=JSON.parse(await file.text());onImport(Array.isArray(data)?data:data.wines);}catch{alert('No he podido leer esa copia de seguridad.');}}
   return <div className="page settings-page"><Header eyebrow="CELLER ROIG" title="Ajustes" right={<button className="icon-button" onClick={onBack}><X/></button>}/>
     <div className="settings-card"><div className="settings-line"><div><strong>Pedro</strong><span>{wines.length} vinos guardados</span></div><WineIcon/></div><div className="settings-line"><div><strong>Sincronización</strong><span>{cloudCopy} · móvil y PC se actualizan automáticamente</span></div><Archive/></div></div>

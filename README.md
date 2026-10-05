@@ -1,24 +1,16 @@
-# Celler Roig v18
+# Celler Roig v20
 
-Vinoteca personal mobile-first de Pedro.
+PWA móvil para la vinoteca de Pedro.
 
-## Cambios principales
+## V20
 
-- **Buscador de vino más completo:** la foto y los datos ya no dependen de la misma tienda. Celler Roig busca resultados y después intenta completar la ficha combinando varias fuentes especializadas (especialmente Decántalo, Bodeboca, Vinissimus, Vinatis, Petit Celler, Vila Viniteca, Vivino, Wine-Searcher y Verema).
-- **Lista de deseos independiente:** un vino puede estar en `Probados` y, a la vez, en `Lista de deseos` si Pedro quiere volver a comprarlo. En la ficha aparece un botón de marcador para añadirlo o quitarlo de deseos.
-- **Sin zoom accidental:** se bloquea el zoom general de la interfaz para evitar pellizcos involuntarios en móvil.
-- **Imagen ampliable:** al tocar la botella dentro de su ficha, la foto se abre a pantalla grande.
-- **Fuentes de consulta:** se añaden Vila Viniteca y Verema a la pestaña `Lista de deseos → Consultar vinos`.
-- Se mantiene el escáner de códigos ZXing compatible con iPhone/Safari y Android/Chrome.
+- Alta con IA mediante 3 fotos: etiqueta delantera, etiqueta trasera y botella entera.
+- `OPENAI_API_KEY` analiza las etiquetas y completa la ficha.
+- `SERPER_API_KEY` enriquece los huecos con fuentes de vino y compara precios online.
+- El precio se guarda como media online cuando hay coincidencias suficientes, con rango y número de tiendas.
+- El maridaje solo aparece cuando ya hay tipo + uva; prioriza información web y, si falta, genera una sugerencia prudente.
+- Barreras adicionales para evitar que tintos terminen clasificados como espumosos por texto irrelevante de tiendas.
+- Foto de botella: la IA intenta quitar manos, apoyo y fondo, corregir luz y dejar una imagen de producto transparente. Si falla, se usa una imagen de catálogo encontrada para el vino exacto.
+- Los datos personales (dónde lo compraste/probaste/viste, puntuación, notas, regalo, volver a comprar) siguen siendo manuales.
 
-## Variables de Vercel
-
-No cambia ninguna variable:
-
-- `DATABASE_URL`
-- `SERPER_API_KEY`
-- `SERPAPI_API_KEY` (solo para búsqueda por foto/Lens)
-
-## Despliegue
-
-Sube el contenido de este ZIP a la raíz del repositorio de GitHub. Vercel detectará el cambio y desplegará automáticamente.
+Variables de entorno: `DATABASE_URL`, `SERPER_API_KEY`, `SERPAPI_API_KEY` (para Lens/compatibilidad antigua) y `OPENAI_API_KEY`.

@@ -271,7 +271,9 @@ export default async function handler(req, res) {
     const name = cleanProductName(asName(product.name) || pageTitle, pageTitle);
     const vintage = inferVintage(`${hint} ${name} ${description}`) || inferVintage(combined);
     const grapes = inferGrapes(`${grapePair} ${combined}`);
-    const type = inferType(`${typePair} ${name} ${description} ${combined.slice(0,50000)}`);
+    // El tipo sólo se decide con campos técnicos/título/descripción. No usamos toda la página,
+    // porque menús y recomendaciones de otros vinos podían convertir un tinto en "Espumoso".
+    const type = inferType(`${typePair} ${name} ${description}`);
     const aging = inferAging(`${agingPair} ${name} ${description} ${combined.slice(0,50000)}`);
     const alcohol = inferAlcohol(`${alcoholPair} ${description} ${bodyText.slice(0,120000)}`);
     const price = getOfferPrice(product);

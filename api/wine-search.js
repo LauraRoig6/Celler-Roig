@@ -80,6 +80,12 @@ function inferTypeSafe(query='',items=[]){
   const ranked=Object.entries(scores).sort((a,b)=>b[1]-a[1]);
   const [best,second]=ranked;
   if(!best||support[best[0]]<2||best[1]<8||best[1]-(second?.[1]||0)<4)return{type:undefined,confidence:0};
+  if(best[0]==='Espumoso'){
+    const evidence=normalize(items.slice(0,7).map(x=>`${x.title||''} ${x.snippet||''}`).join(' '));
+    const redSignals=(evidence.match(/crianza|reserva|gran reserva|vino tinto|tempranillo|tinto fino|ribera del duero|cabernet|merlot|syrah|garnacha|monastrell|bobal/g)||[]).length;
+    const sparklingSignals=(evidence.match(/espumoso|sparkling|champagne|\bcava\b|prosecco|frizzante|brut|corpinnat/g)||[]).length;
+    if(redSignals>=2&&sparklingSignals<3)return{type:undefined,confidence:0};
+  }
   return{type:best[0],confidence:support[best[0]]>=3?0.95:0.85};
 }
 function inferAging(text=''){const t=normalize(text);if(/gran reserva/.test(t))return'Gran Reserva';if(/\breserva\b/.test(t))return'Reserva';if(/\bcrianza\b/.test(t))return'Crianza';if(/\broble\b|barrica|oak aged|barrel aged|fut de chene/.test(t))return'Roble';if(/\bjoven\b|young wine|vin jeune/.test(t))return'Joven';return undefined;}
