@@ -40,6 +40,9 @@ const GRAPES = [
   'Malbec','Sangiovese','Nebbiolo','Barbera','Corvina','Rondinella','Pinot Grigio','Glera','Touriga Nacional','Touriga Franca','Tinta Roriz','Carmenère','Carmenere','Zinfandel','Grenache','Mourvèdre','Mourvedre','Viognier','Gamay','Sémillon','Semillon','Chasselas','Grüner Veltliner','Gruner Veltliner'
 ];
 function normalize(value=''){return String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();}
+const GRAPE_ALIASES={grenache:'Garnacha',garnatxa:'Garnacha','garnacha tinta':'Garnacha',shiraz:'Syrah','pinot grigio':'Pinot Gris',mourvedre:'Monastrell','mourvèvre':'Monastrell','mourvèdre':'Monastrell',mataro:'Monastrell','tinto fino':'Tempranillo','tinta del pais':'Tempranillo','tinta del país':'Tempranillo',cencibel:'Tempranillo','tinta roriz':'Tempranillo',viura:'Macabeo',carmenere:'Carmenère',semillon:'Sémillon','gruner veltliner':'Grüner Veltliner'};
+function canonicalGrape(value=''){const clean=String(value).trim().replace(/\s+/g,' ');return GRAPE_ALIASES[normalize(clean)]||clean;}
+
 function tokens(query=''){return normalize(query).split(/[^a-z0-9]+/).filter(t=>t.length>1&&!STOPWORDS.has(t));}
 function hostOf(url=''){try{return new URL(url).hostname.replace(/^www\./,'');}catch{return'';}}
 function isBlocked(host=''){return BLOCKED_HOSTS.some(x=>host===x||host.endsWith(`.${x}`)||host.includes(x));}
@@ -76,22 +79,22 @@ function inferTypeSafe(query='',items=[]){
 }
 function inferAging(text=''){const t=normalize(text);if(/gran reserva/.test(t))return'Gran Reserva';if(/\breserva\b/.test(t))return'Reserva';if(/\bcrianza\b/.test(t))return'Crianza';if(/\broble\b|barrica|oak aged|barrel aged|fut de chene/.test(t))return'Roble';if(/\bjoven\b|young wine|vin jeune/.test(t))return'Joven';return undefined;}
 function inferAppellation(text=''){const t=normalize(text);for(const [name,region,country,classification,aliases] of APPELLATIONS){if(aliases.some(a=>t.includes(normalize(a))))return{denomination:name,region,country,classification,protection:country==='España'?(classification==='IGP'?'IGP':'DOP'):'Sin indicación'};}const raw=String(text);const igp=raw.match(/(?:IGP|I\.G\.P\.|vino de la tierra)\s*(?:de\s*)?([A-ZÁÉÍÓÚÜÑa-záéíóúüñ\- ]{3,50})/i);if(igp)return{denomination:igp[1].trim(),region:'',country:'España',classification:'IGP',protection:'IGP'};const intl=raw.match(/\b(AOC|AOP|DOCG|DOC|AVA|IG|GI|DOQ|DOCa)\b/i);return{denomination:'',region:'',country:'',classification:intl?.[1]||'',protection:'Sin indicación'};}
-function inferGrapes(text=''){const t=normalize(text);const found=[];for(const grape of GRAPES){if(t.includes(normalize(grape))&&!found.some(x=>normalize(x)===normalize(grape)))found.push(grape);}return found.slice(0,8);}
+function inferGrapes(text=''){const t=normalize(text);const found=[];const seen=new Set();for(const grape of GRAPES){if(!t.includes(normalize(grape)))continue;const canonical=canonicalGrape(grape);const key=normalize(canonical);if(seen.has(key))continue;seen.add(key);found.push(canonical);}return found.slice(0,8);}
 function inferAlcohol(text=''){const found=[...String(text).matchAll(/(\d{1,2}(?:[.,]\d)?)\s*%\s*(?:vol\.?|alc\.?|alcohol)?/gi)].map(m=>Number(m[1].replace(',','.'))).filter(n=>n>=5&&n<=25);return found[0];}
 function pairingPreset(type,grapes=[],aging=''){
   const all=normalize(grapes.join(' '));
   if(type==='Espumoso')return'Aperitivos, marisco, sushi, arroces y frituras';
   if(type==='Rosado')return'Aperitivos, ensaladas, pasta, arroces y cocina mediterránea';
   if(type==='Blanco'){
-    if(/albarino|godello|verdejo|sauvignon|riesling/.test(all))return'Marisco, pescado, arroces marineros y quesos suaves';
-    if(/chardonnay|viognier/.test(all)&&/roble|crianza|reserva/i.test(aging||''))return'Pescado al horno, aves, pasta cremosa y quesos semicurados';
+    if(/albarino|godello|verdejo|sauvignon|riesling/.test(all))return'Marisco, pescado, arroces y quesos suaves';
+    if(/chardonnay|viognier/.test(all)&&/roble|crianza|reserva/i.test(aging||''))return'Pescado, aves, pasta cremosa y quesos semicurados';
     return'Pescado, marisco, aperitivos y platos ligeros';
   }
   if(type==='Tinto'){
-    if(/tempranillo|tinto fino|tinta del pais/.test(all))return'Cordero, carnes asadas, embutidos y quesos curados';
+    if(/tempranillo|tinto fino|tinta del pais/.test(all))return'Carnes rojas, asados, embutidos y quesos curados';
     if(/cabernet|syrah|shiraz|malbec|monastrell|bobal/.test(all))return'Carnes rojas, guisos, barbacoa y quesos intensos';
     if(/pinot noir|gamay/.test(all))return'Aves, setas, carnes blancas y quesos suaves';
-    if(/garnacha|grenache/.test(all))return'Carnes a la brasa, arroces de carne, embutidos y quesos';
+    if(/garnacha|grenache/.test(all))return'Carnes rojas, arroces, embutidos y quesos';
     return'Carnes, guisos, embutidos y quesos';
   }
   return'';

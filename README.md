@@ -1,8 +1,8 @@
-# Celler Roig · V14
+# Celler Roig · V15
 
 Vinoteca personal mobile-first de Pedro.
 
-## Novedades V14
+## Novedades V15
 
 - **¿Qué abrimos hoy?** ahora acepta el nombre de un plato (por ejemplo, `paella mixta` o `cordero al horno con patatas panadera`) y compara ese plato con los maridajes de las botellas disponibles en la Vinoteca. El botón ✨ mantiene el modo **Sorpréndeme**.
 - Cabeceras **fijas (sticky)** para que la navegación se sienta más como una app móvil:
@@ -17,7 +17,7 @@ Vinoteca personal mobile-first de Pedro.
   - 3 en Vinoteca (uno regalado, uno pendiente de probar y uno probado),
   - 1 solo en Probados,
   - 1 en Por probar.
-- V14 elimina los vinos de ejemplo antiguos y los sustituye por los nuevos, conservando cualquier vino real añadido por el usuario.
+- V15 elimina los vinos de ejemplo antiguos y los sustituye por los nuevos, conservando cualquier vino real añadido por el usuario.
 
 ## Variables de entorno en Vercel
 

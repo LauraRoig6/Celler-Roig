@@ -48,12 +48,31 @@ const emptyForm = (): EditableWine => ({
 
 const LEGACY_DEMO_NAMES = new Set(['Viña Ardanza','Muga Crianza','Protos 27','Mar de Frades','Les Alcusses','Finca Terrerazo']);
 function migrateLegacyDemos(list: Wine[]) {
-  if (!list.some(w => LEGACY_DEMO_NAMES.has(w.name))) return { changed: false, wines: list };
   const demoIds = new Set(seedWines.map(w => w.id));
+  if (!list.some(w => LEGACY_DEMO_NAMES.has(w.name) || demoIds.has(w.id))) return { changed: false, wines: list };
   const kept = list.filter(w => !LEGACY_DEMO_NAMES.has(w.name) && !demoIds.has(w.id));
   const baseOrder = Math.max(-1, ...kept.map(w => w.manualOrder));
   const demos = normalizeCollection(seedWines).map((w,i) => ({ ...w, manualOrder: baseOrder + i + 1 }));
   return { changed: true, wines: [...kept, ...demos] };
+}
+
+const GRAPE_ALIASES: Record<string,string> = {
+  'grenache': 'Garnacha', 'garnatxa': 'Garnacha', 'garnacha tinta': 'Garnacha',
+  'shiraz': 'Syrah',
+  'pinot grigio': 'Pinot Gris',
+  'mourvedre': 'Monastrell', 'mourvèdre': 'Monastrell', 'mataro': 'Monastrell',
+  'tinto fino': 'Tempranillo', 'tinta del pais': 'Tempranillo', 'tinta del país': 'Tempranillo', 'cencibel': 'Tempranillo', 'tinta roriz': 'Tempranillo',
+  'viura': 'Macabeo',
+  'carmenere': 'Carmenère',
+  'semillon': 'Sémillon',
+  'gruner veltliner': 'Grüner Veltliner',
+};
+function grapeLookupKey(value:string){return value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();}
+function canonicalGrape(value:string){const clean=value.trim().replace(/\s+/g,' ');return GRAPE_ALIASES[grapeLookupKey(clean)] || clean;}
+function normalizeGrapeList(values:string[]){
+  const out:string[]=[]; const seen=new Set<string>();
+  for(const value of values){const grape=canonicalGrape(value);const key=grapeLookupKey(grape);if(!grape||seen.has(key))continue;seen.add(key);out.push(grape);}
+  return out;
 }
 
 function normalizeWine(raw: Partial<Wine>): Wine {
@@ -64,7 +83,7 @@ function normalizeWine(raw: Partial<Wine>): Wine {
   const status: WineStatus = legacyWishlist ? 'wishlist' : quantity > 0 ? 'cellar' : 'tried';
   return {
     id: raw.id || crypto.randomUUID(), name: raw.name || '', winery: raw.winery || '', vintage: raw.vintage,
-    type: ['Tinto','Blanco','Rosado','Espumoso','Sin indicar'].includes(String(raw.type)) ? raw.type as WineType : 'Sin indicar', grapes: Array.isArray(raw.grapes) ? raw.grapes : [], aging: raw.aging || 'Sin indicar',
+    type: ['Tinto','Blanco','Rosado','Espumoso','Sin indicar'].includes(String(raw.type)) ? raw.type as WineType : 'Sin indicar', grapes: normalizeGrapeList(Array.isArray(raw.grapes) ? raw.grapes : []), aging: raw.aging || 'Sin indicar',
     customAging: raw.customAging || '', protection, classification: raw.classification || (protection === 'Sin indicación' ? '' : protection),
     denomination: raw.denomination || '', region: raw.region || '', country: raw.country || '', alcohol: raw.alcohol,
     price: raw.price, shop: raw.shop || '', shopContext: raw.shopContext || (legacyWishlist ? 'wishlist' : quantity > 0 ? 'cellar' : 'tried'), quantity, status, tried: Boolean(legacyTried), wishlist: Boolean(legacyWishlist),
@@ -86,19 +105,19 @@ function shopLabelForStatus(status: WineStatus) {
 }
 
 function pairingSuggestion(type: WineType, grapes: string[], aging: Aging = 'Sin indicar') {
-  const all = grapes.map(g => g.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()).join(' ');
-  if (type === 'Espumoso') return 'Aperitivos, marisco, sushi, arroces y frituras';
+  const all = normalizeGrapeList(grapes).map(g => grapeLookupKey(g)).join(' ');
+  if (type === 'Espumoso') return 'Aperitivos, marisco, pescado, arroces y frituras';
   if (type === 'Rosado') return 'Aperitivos, ensaladas, pasta, arroces y cocina mediterránea';
   if (type === 'Blanco') {
-    if (/albari|godello|verdejo|sauvignon|riesling/.test(all)) return 'Marisco, pescado, arroces marineros y quesos suaves';
-    if (/chardonnay|viognier/.test(all) && ['Roble','Crianza','Reserva'].includes(aging)) return 'Pescado al horno, aves, pasta cremosa y quesos semicurados';
+    if (/albarino|godello|verdejo|sauvignon|riesling/.test(all)) return 'Marisco, pescado, arroces y quesos suaves';
+    if (/chardonnay|viognier/.test(all) && ['Roble','Crianza','Reserva'].includes(aging)) return 'Pescado, aves, pasta cremosa y quesos semicurados';
     return 'Pescado, marisco, aperitivos y platos ligeros';
   }
   if (type === 'Tinto') {
-    if (/tempranillo|tinto fino|tinta del pais/.test(all)) return 'Cordero, carnes asadas, embutidos y quesos curados';
-    if (/cabernet|syrah|shiraz|malbec|monastrell|bobal/.test(all)) return 'Carnes rojas, guisos, barbacoa y quesos intensos';
+    if (/tempranillo/.test(all)) return 'Carnes rojas, asados, embutidos y quesos curados';
+    if (/cabernet|syrah|malbec|monastrell|bobal/.test(all)) return 'Carnes rojas, guisos, barbacoa y quesos intensos';
     if (/pinot noir|gamay/.test(all)) return 'Aves, setas, carnes blancas y quesos suaves';
-    if (/garnacha|grenache/.test(all)) return 'Carnes a la brasa, arroces de carne, embutidos y quesos';
+    if (/garnacha/.test(all)) return 'Carnes rojas, arroces, embutidos y quesos';
     return 'Carnes, guisos, embutidos y quesos';
   }
   return '';
@@ -113,38 +132,39 @@ function dishHints(dish: string) {
   const q = normalizeFood(dish);
   const hints = new Set<string>(q.split(' ').filter(x => x.length > 2));
   const add = (...values:string[]) => values.forEach(v => hints.add(v));
-  if (/paella|arroz|risotto/.test(q)) add('arroz','arroces');
-  if (/paella.*mixta|mixta.*paella/.test(q)) add('marisco','carne','aves','mediterranea');
-  if (/cordero|lechazo|cabrito/.test(q)) add('cordero','lechazo','carnes','asadas','guisos');
-  if (/ternera|buey|vaca|chuleton|entrecot|solomillo/.test(q)) add('carnes','rojas','asadas','barbacoa');
-  if (/cerdo|secreto|presa|costilla/.test(q)) add('carnes','asadas','barbacoa');
+  if (/paella|arroz|risotto/.test(q)) add('arroz','arroces','mediterranea');
+  if (/cordero|lechazo|cabrito|ternera|buey|vaca|chuleton|entrecot|solomillo/.test(q)) add('carnes','rojas','asados');
+  if (/cerdo|secreto|presa|costilla/.test(q)) add('carnes','asados','barbacoa');
   if (/pollo|pavo|ave|aves/.test(q)) add('aves','carnes','blancas');
-  if (/pescado|merluza|lubina|dorada|bacalao|salmon|atun/.test(q)) add('pescado','marino');
+  if (/pescado|merluza|lubina|dorada|bacalao|salmon|atun/.test(q)) add('pescado');
   if (/marisco|gamba|langostino|mejillon|ostra|vieira/.test(q)) add('marisco','pescado');
-  if (/sushi|sashimi/.test(q)) add('sushi','pescado','fresco');
+  if (/sushi|sashimi/.test(q)) add('sushi','pescado');
   if (/pasta|lasana|lasaña|pizza/.test(q)) add('pasta','mediterranea');
   if (/queso|tabla/.test(q)) add('quesos');
   if (/seta|setas|hongo|hongos/.test(q)) add('setas');
   if (/aperitivo|tapa|tapas|entrante/.test(q)) add('aperitivos');
+  if (/ensalada|verdura|verduras|vegetal|vegetales/.test(q)) add('ensaladas','platos','ligeros');
+  if (/guiso|estofado/.test(q)) add('guisos','carnes');
+  if (/brasa|parrilla|barbacoa/.test(q)) add('barbacoa','asados');
   return { q, hints: [...hints] };
 }
 
 function scoreWineForDish(wine: Wine, dish: string) {
   const { q, hints } = dishHints(dish);
+  const hintSet = new Set(hints);
   const fallbackPairing = wine.pairing || pairingSuggestion(wine.type, wine.grapes, wine.aging);
   const hay = normalizeFood([fallbackPairing, wine.type, ...wine.grapes, displayAging(wine), wine.denomination].join(' '));
   let score = 0;
   if (q && hay.includes(q)) score += 16;
   for (const hint of hints) if (hint.length > 2 && hay.includes(hint)) score += hint.length > 5 ? 3.2 : 2.2;
-  // Reglas suaves solo para desempatar cuando el maridaje escrito no basta.
-  if (/cordero|lechazo|cabrito|ternera|buey|chuleton|entrecot|solomillo|carne|costilla|cerdo/.test(q) && wine.type === 'Tinto') score += 4;
-  if (/pescado|merluza|lubina|dorada|marisco|gamba|langostino|sushi/.test(q) && ['Blanco','Rosado','Espumoso'].includes(wine.type)) score += 4;
-  if (/paella|arroz/.test(q)) {
-    if (['Blanco','Rosado'].includes(wine.type)) score += 2.5;
-    if (wine.type === 'Tinto' && ['Joven','Roble','Sin indicar'].includes(wine.aging)) score += 1.5;
-    if (/marisco|pescado|arroces|arroz/.test(hay)) score += 4;
+  // Solo usamos familias amplias de comida como desempate. El plato concreto lo escribe la persona.
+  if ((hintSet.has('rojas') || hintSet.has('guisos') || hintSet.has('asados') || hintSet.has('barbacoa')) && wine.type === 'Tinto') score += 4;
+  if ((hintSet.has('pescado') || hintSet.has('marisco') || hintSet.has('sushi')) && ['Blanco','Rosado','Espumoso'].includes(wine.type)) score += 4;
+  if (hintSet.has('arroces')) {
+    if (/arroces|arroz|mediterranea/.test(hay)) score += 4;
+    if (['Blanco','Rosado'].includes(wine.type)) score += 1.5;
   }
-  if (/queso/.test(q) && ['Tinto','Espumoso'].includes(wine.type)) score += 1.5;
+  if (hintSet.has('quesos') && ['Tinto','Espumoso'].includes(wine.type)) score += 1.5;
   if (wine.favorite) score += .7;
   if (wine.score != null) score += Math.max(0, wine.score - 7) * .35;
   return { score, pairing: fallbackPairing };
@@ -500,7 +520,7 @@ function HomeScreen({ wines, cellar, tried, wishlist, favorites, bottleCount, on
 
     {cellar.length > 0 && <section className="open-tonight-card food-card">
       <div className="food-card-head"><div className="open-title"><Utensils/><div><strong>¿Qué abrimos hoy?</strong><span>Dime qué vais a comer y busco la botella que mejor encaja.</span></div></div><div className="food-modes"><button className="food-mode active" onClick={recommendDish}><Utensils size={15}/> Comida</button><button className="food-mode sparkle" onClick={surprise} aria-label="Sorpréndeme" title="Sorpréndeme"><Sparkles size={18}/></button></div></div>
-      <div className="dish-input"><input value={dish} onChange={e=>setDish(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')recommendDish()}} placeholder="Ej. cordero al horno con patatas panadera"/><button onClick={recommendDish} disabled={!dish.trim()}>Recomendar</button></div>
+      <div className="dish-input"><input value={dish} onChange={e=>setDish(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')recommendDish()}} placeholder="Ej. arroz, pasta, carne, pescado…"/><button onClick={recommendDish} disabled={!dish.trim()}>Recomendar</button></div>
       {suggested&&<button className="suggested-wine" onClick={()=>onOpen(suggested.wine)}><BottleVisual wine={suggested.wine} compact/><div><small>Mi propuesta</small><strong>{suggested.wine.name}</strong><span>{suggested.wine.vintage || 'Sin añada'} · {suggested.wine.quantity} en casa</span><em>{suggested.reason}</em></div></button>}
     </section>}
 
@@ -622,15 +642,16 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
     const explicitType=inferWineType(raw);
     const confidentType=(product.type&&((product.typeConfidence??0)>=0.8))?product.type:explicitType;
     const inferredAging=product.aging&&product.aging!=='Sin indicar'?product.aging:inferAgingText(`${product.name||''} ${product.rawText||''}`);
+    const importedGrapes=normalizeGrapeList(product.grapes||[]);
     setForm(f=>({...f,
       name:product.name?.trim()||f.name, winery:product.winery?.trim()||f.winery, vintage:inferredVintage||f.vintage,
-      type:confidentType||f.type, grapes:product.grapes?.length?product.grapes:f.grapes, aging:inferredAging||f.aging,
+      type:confidentType||f.type, grapes:importedGrapes.length?importedGrapes:f.grapes, aging:inferredAging||f.aging,
       protection:product.protection||f.protection, classification:product.classification?.trim()||f.classification,
       denomination:product.denomination?.trim()||f.denomination, region:product.region?.trim()||f.region,
       country:product.country?.trim()||f.country, alcohol:product.alcohol||f.alcohol, price:product.price||f.price,
       imageUrl:product.imageUrl||f.imageUrl,
-      pairing:product.pairing?.trim() || f.pairing || pairingSuggestion(confidentType||f.type, product.grapes?.length?product.grapes:f.grapes, inferredAging||f.aging),
-      pairingSource:product.pairing?.trim() ? (product.pairingSource||'web') : (f.pairingSource || (pairingSuggestion(confidentType||f.type, product.grapes?.length?product.grapes:f.grapes, inferredAging||f.aging)?'sugerencia':'')),
+      pairing:product.pairing?.trim() || f.pairing || pairingSuggestion(confidentType||f.type, importedGrapes.length?importedGrapes:f.grapes, inferredAging||f.aging),
+      pairingSource:product.pairing?.trim() ? (product.pairingSource||'web') : (f.pairingSource || (pairingSuggestion(confidentType||f.type, importedGrapes.length?importedGrapes:f.grapes, inferredAging||f.aging)?'sugerencia':'')),
     }));
     setMoreInfo(true);setCatalogOpen(false);
   }
@@ -643,12 +664,12 @@ function AddScreen({form,setForm,save,editing,moreInfo,setMoreInfo,onCancel}:{fo
       <div className="two-cols"><Field label="Añada"><input type="number" inputMode="numeric" value={form.vintage||''} onChange={e=>setForm(f=>({...f,vintage:e.target.value?Number(e.target.value):undefined}))}/></Field><Field label="Bodega / productor"><input value={form.winery} onChange={e=>setForm(f=>({...f,winery:e.target.value}))} placeholder="Bodegas Muga"/></Field></div>
       <Field label="Tipo"><div className="choice-grid">{(['Tinto','Blanco','Rosado','Espumoso'] as const).map(t=><button type="button" key={t} className={form.type===t?'choice active':'choice'} onClick={()=>setForm(f=>({...f,type:t,pairing:f.pairing||pairingSuggestion(t,f.grapes,f.aging),pairingSource:f.pairingSource||(pairingSuggestion(t,f.grapes,f.aging)?'sugerencia':'')}))}>{t}</button>)}</div>{form.type==='Sin indicar'&&<small className="field-hint">Si la búsqueda no está segura, lo dejamos sin indicar para que lo elijas tú.</small>}</Field>
 
-      <Field label="Uva / variedades"><input value={form.grapes.join(', ')} onChange={e=>{const grapes=e.target.value.split(',').map(x=>x.trim()).filter(Boolean);setForm(f=>({...f,grapes,pairing:f.pairingSource==='web'?f.pairing:pairingSuggestion(f.type,grapes,f.aging),pairingSource:f.pairingSource==='web'?'web':(pairingSuggestion(f.type,grapes,f.aging)?'sugerencia':'')}));}} placeholder="Tempranillo, Merlot, Pinot Noir…"/></Field>
-      <div className="two-cols"><Field label="Envejecimiento"><select value={form.aging} onChange={e=>{const aging=e.target.value as Aging;setForm(f=>({...f,aging,pairing:f.pairingSource==='web'?f.pairing:pairingSuggestion(f.type,f.grapes,aging),pairingSource:f.pairingSource==='web'?'web':(pairingSuggestion(f.type,f.grapes,aging)?'sugerencia':'')}));}}>{agingOptions.map(x=><option key={x}>{x}</option>)}</select></Field><Field label="Clasificación oficial"><input value={form.classification} onChange={e=>setForm(f=>({...f,classification:e.target.value}))} placeholder="DOCa, AOC, DOCG, AVA…"/><small className="field-hint">La categoría legal del vino según su país. Si no aparece, déjalo vacío.</small></Field></div>
+      <Field label="Uva / variedades"><input value={form.grapes.join(', ')} onChange={e=>{const grapes=normalizeGrapeList(e.target.value.split(',').map(x=>x.trim()).filter(Boolean));setForm(f=>({...f,grapes,pairing:f.pairingSource==='web'?f.pairing:pairingSuggestion(f.type,grapes,f.aging),pairingSource:f.pairingSource==='web'?'web':(pairingSuggestion(f.type,grapes,f.aging)?'sugerencia':'')}));}} placeholder="Tempranillo, Garnacha, Pinot Noir…"/><small className="field-hint">Unificamos sinónimos de la misma uva (por ejemplo, Grenache → Garnacha).</small></Field>
+      <Field label="Envejecimiento"><select value={form.aging} onChange={e=>{const aging=e.target.value as Aging;setForm(f=>({...f,aging,pairing:f.pairingSource==='web'?f.pairing:pairingSuggestion(f.type,f.grapes,aging),pairingSource:f.pairingSource==='web'?'web':(pairingSuggestion(f.type,f.grapes,aging)?'sugerencia':'')}));}}>{agingOptions.map(x=><option key={x}>{x}</option>)}</select></Field>
       {form.aging==='Otro'&&<Field label="Envejecimiento / mención"><input value={form.customAging} onChange={e=>setForm(f=>({...f,customAging:e.target.value}))} placeholder="Ej. 18 meses en roble francés"/></Field>}
       <Field label="Denominación / Appellation"><input value={form.denomination} onChange={e=>setForm(f=>({...f,denomination:e.target.value}))} placeholder="Rioja, Bordeaux, Chianti Classico, Napa Valley…"/></Field>
       <div className="two-cols"><Field label="Región"><input value={form.region} onChange={e=>setForm(f=>({...f,region:e.target.value}))} placeholder="Bourgogne, Mendoza…"/></Field><Field label="País"><input value={form.country} onChange={e=>setForm(f=>({...f,country:e.target.value}))} placeholder="España, Francia, Italia…"/></Field></div>
-      <Field label="Maridaje"><div className="pairing-field"><textarea rows={2} value={form.pairing} onChange={e=>setForm(f=>({...f,pairing:e.target.value,pairingSource:e.target.value?'manual':''}))} placeholder="Ej. carnes asadas, cordero y quesos curados"/>{form.pairingSource&&<small className="pairing-source">{form.pairingSource==='web'?'✓ Encontrado en la ficha del vino':'✨ Sugerencia automática según tipo y uva'}</small>}</div></Field>
+      <Field label="Maridaje"><div className="pairing-field"><textarea rows={2} value={form.pairing} onChange={e=>setForm(f=>({...f,pairing:e.target.value,pairingSource:e.target.value?'manual':''}))} placeholder="Ej. carnes rojas, arroces y quesos curados"/>{form.pairingSource&&<small className="pairing-source">{form.pairingSource==='web'?'✓ Encontrado en la ficha del vino':'✨ Sugerencia automática según tipo y uva'}</small>}</div></Field>
 
       <div className="compact-section">
         <span className="compact-label">Dónde va</span>
@@ -716,9 +737,9 @@ function WineModal({wine,allWines,onOpenWine,onClose,onPatch,onEdit,onDelete,onM
   const [showTasting,setShowTasting]=useState(false); const [tasteScore,setTasteScore]=useState<string>(wine.score!=null?String(wine.score):''); const [tasteNotes,setTasteNotes]=useState('');
   const similar=allWines.filter(w=>w.id!==wine.id).map(w=>{let score=0;if(w.denomination&&wine.denomination&&w.denomination.toLowerCase()===wine.denomination.toLowerCase())score+=5;if(w.type===wine.type&&wine.type!=='Sin indicar')score+=2;if(w.country&&wine.country&&w.country.toLowerCase()===wine.country.toLowerCase())score+=1;if(w.aging===wine.aging&&wine.aging!=='Sin indicar')score+=1;const shared=w.grapes.some(g=>wine.grapes.some(x=>x.toLowerCase()===g.toLowerCase()));if(shared)score+=4;return{w,score};}).filter(x=>x.score>=4).sort((a,b)=>b.score-a.score).slice(0,3).map(x=>x.w);
   function addTasting(){const tasting:Tasting={id:crypto.randomUUID(),date:new Date().toISOString(),score:tasteScore?Math.min(10,Math.max(0,Number(tasteScore))):undefined,notes:tasteNotes.trim()};const list=[...(wine.tastings||[]),tasting];onPatch(wine.id,{tried:true,wishlist:false,status:wine.quantity>0?'cellar':'tried',score:tasting.score??wine.score,notes:tasting.notes||wine.notes,tastings:list,lastTastedAt:tasting.date});setShowTasting(false);setTasteNotes('');}
-  return <div className="modal-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="wine-modal"><div className="modal-handle"/><div className="modal-top"><button className="icon-button" onClick={onClose}><X/></button><button className="icon-button" onClick={()=>onEdit(wine)}><Pencil/></button></div><div className="modal-hero"><div className="modal-bottle"><BottleVisual wine={wine}/></div><div className="modal-title"><span>{wine.denomination||wine.country||wine.type}</span><h2>{wine.name}</h2><p>{wine.winery}{wine.vintage?` · ${wine.vintage}`:''}</p><div className="modal-badges">{wine.gifted&&<span><Gift size={14}/> Regalo</span>}{wine.tried&&<span><Check size={14}/> Probado</span>}</div><div className="quick-flags"><button className={wine.favorite?'favorite-button active':'favorite-button'} onClick={()=>onPatch(wine.id,{favorite:!wine.favorite})}><Heart size={19} fill={wine.favorite?'currentColor':'none'}/>{wine.favorite?'Favorito':'Favorito'}</button><button className={wine.openSoon?'favorite-button active':'favorite-button'} onClick={()=>onPatch(wine.id,{openSoon:!wine.openSoon})}><Clock3 size={18}/>{wine.openSoon?'Abrir pronto':'Abrir pronto'}</button></div></div></div>
+  return <div className="modal-backdrop" onMouseDown={e=>{if(e.currentTarget===e.target)onClose()}}><article className="wine-modal"><div className="modal-handle"/><div className="modal-top"><button className="icon-button" onClick={onClose}><X/></button><button className="icon-button" onClick={()=>onEdit(wine)}><Pencil/></button></div><div className="modal-hero"><div className="modal-bottle"><BottleVisual wine={wine}/></div><div className="modal-title"><span>{wine.denomination||wine.country||wine.type}</span><h2>{wine.name}</h2><p>{wine.winery}{wine.vintage?` · ${wine.vintage}`:''}</p><div className="modal-badges">{wine.gifted&&<span><Gift size={14}/> Regalo</span>}{wine.tried&&<span><Check size={14}/> Probado</span>}</div><div className="quick-flags"><button className={wine.favorite?'flag-icon-button active':'flag-icon-button'} onClick={()=>onPatch(wine.id,{favorite:!wine.favorite})} aria-label={wine.favorite?'Quitar de favoritos':'Marcar como favorito'} title="Favorito"><Heart size={20} fill={wine.favorite?'currentColor':'none'}/></button><button className={wine.openSoon?'flag-icon-button active':'flag-icon-button'} onClick={()=>onPatch(wine.id,{openSoon:!wine.openSoon})} aria-label={wine.openSoon?'Quitar de abrir pronto':'Marcar para abrir pronto'} title="Abrir pronto"><Clock3 size={20}/></button></div></div></div>
     {wine.wishlist?<div className="wishlist-actions-modal"><button className="primary modal-main-action" onClick={()=>onMoveToCellar(wine)}><ShoppingBag size={20}/> Ya lo tengo</button><button className="secondary modal-main-action" onClick={()=>onPatch(wine.id,{wishlist:false,tried:true,status:'tried',quantity:0,lastTastedAt:new Date().toISOString()})}><CheckCircle2 size={20}/> Ya lo he probado</button></div>:<><div className="score-stock"><div><span>Tu nota</span><strong>{wine.score??'—'}<small>/10</small></strong></div><div><span>En casa</span><strong>{wine.quantity}<small>{wine.quantity===1?' botella':' botellas'}</small></strong></div></div>{wine.quantity>0&&<div className="modal-actions"><div className="qty-control"><button onClick={()=>onPatch(wine.id,{quantity:Math.max(0,wine.quantity-1),status:wine.quantity<=1?'tried':'cellar',tried:wine.quantity<=1?true:wine.tried})}><Minus/></button><strong>{wine.quantity}</strong><button onClick={()=>onPatch(wine.id,{quantity:wine.quantity+1,status:'cellar',wishlist:false})}><Plus/></button></div><button className="primary drink-button" onClick={()=>onConsume(wine)}><GlassWater size={19}/> He bebido una</button></div>}<button className="secondary tasting-action" onClick={()=>setShowTasting(!showTasting)}><Star size={18}/>{wine.tried?'Registrar otra cata':'Marcar como probado'}</button>{showTasting&&<div className="tasting-editor"><div className="two-cols"><Field label="Nota (0–10)"><input type="number" min="0" max="10" step="0.1" value={tasteScore} onChange={e=>setTasteScore(e.target.value)}/></Field><Field label="Fecha"><input type="text" value={new Date().toLocaleDateString('es-ES')} readOnly/></Field></div><Field label="Comentario"><textarea rows={3} value={tasteNotes} onChange={e=>setTasteNotes(e.target.value)} placeholder="Qué te ha parecido…"/></Field><button className="primary" onClick={addTasting}>Guardar cata</button></div>}</>}
-    <div className="details-card"><Info label="Tipo" value={wine.type}/><Info label="Uva / variedades" value={wine.grapes.join(', ')||'—'}/><Info label="Envejecimiento" value={displayAging(wine)}/>{wine.classification&&<Info label="Clasificación oficial" value={wine.classification}/>}<Info label="Denominación / Appellation" value={wine.denomination||'—'}/>{wine.region&&<Info label="Región" value={wine.region}/>} {wine.country&&<Info label="País" value={wine.country}/>} {wine.pairing&&<Info label="Maridaje" value={wine.pairing}/>} {wine.price!=null&&<Info label="Precio" value={`${wine.price.toFixed(2)} €`}/>} {wine.shop&&<Info label={shopLabelForStatus(wine.shopContext || (wine.wishlist?'wishlist':wine.quantity>0?'cellar':'tried'))} value={wine.shop}/>} {wine.alcohol!=null&&<Info label="Graduación" value={`${wine.alcohol}% vol.`}/>}</div>
+    <div className="details-card"><Info label="Tipo" value={wine.type}/><Info label="Uva / variedades" value={wine.grapes.join(', ')||'—'}/><Info label="Envejecimiento" value={displayAging(wine)}/><Info label="Denominación / Appellation" value={wine.denomination||'—'}/>{wine.region&&<Info label="Región" value={wine.region}/>} {wine.country&&<Info label="País" value={wine.country}/>} {wine.pairing&&<Info label="Maridaje" value={wine.pairing}/>} {wine.price!=null&&<Info label="Precio" value={`${wine.price.toFixed(2)} €`}/>} {wine.shop&&<Info label={shopLabelForStatus(wine.shopContext || (wine.wishlist?'wishlist':wine.quantity>0?'cellar':'tried'))} value={wine.shop}/>} {wine.alcohol!=null&&<Info label="Graduación" value={`${wine.alcohol}% vol.`}/>}</div>
     {wine.gifted&&<div className="gift-card"><Gift size={19}/><div><strong>Esta botella fue un regalo</strong><span>{wine.giftedBy?`De ${wine.giftedBy}`:'Sin indicar quién'}{wine.giftDate?` · ${formatDate(wine.giftDate)}`:''}</span></div></div>}
     {(wine.notes||wine.rebuy)&&<div className="notes-card">{wine.notes&&<><span>Tu opinión</span><p>{wine.notes}</p></>}{wine.rebuy&&<div className="rebuy"><Check size={17}/> Lo compraría otra vez: <b>{wine.rebuy}</b></div>}</div>}
     {wine.tastings?.length>0&&<div className="history-card"><span>Historial de catas</span>{[...wine.tastings].reverse().slice(0,4).map(t=><div key={t.id} className="history-row"><div><Clock3 size={15}/><strong>{formatDate(t.date)}</strong></div>{t.score!=null&&<b>{t.score}/10</b>}{t.notes&&<p>{t.notes}</p>}</div>)}</div>}
@@ -736,8 +757,8 @@ function SettingsScreen({wines,cloudStatus,onBack,onReset,onImport}:{wines:Wine[
   const countries=new Set(wines.map(w=>w.country).filter(Boolean)).size;
   const topValue=(values:string[])=>{const counts=new Map<string,number>();values.filter(Boolean).forEach(v=>counts.set(v,(counts.get(v)||0)+1));return [...counts.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||'—';};
   const topDenomination=topValue(wines.map(w=>w.denomination)); const topGrape=topValue(wines.flatMap(w=>w.grapes));
-  function exportCsv(){const esc=(v:unknown)=>`"${String(v??'').replace(/"/g,'""')}"`;const head=['Nombre','Bodega','Añada','Tipo','Uvas','Envejecimiento','Clasificación','Denominación/Appellation','Región','País','Maridaje','Botellas','Probado','Por probar','Regalo','Regalado por','Precio','Dónde lo compré/probé/vi','Graduación','Nota','Volvería a comprar','Notas'];const rows=wines.map(w=>[w.name,w.winery,w.vintage||'',w.type,w.grapes.join(' / '),displayAging(w),w.classification,w.denomination,w.region,w.country,w.pairing,w.quantity,w.tried?'Sí':'No',w.wishlist?'Sí':'No',w.gifted?'Sí':'No',w.giftedBy,w.price??'',w.shop,w.alcohol??'',w.score??'',w.rebuy,w.notes]);const csv='\uFEFF'+[head,...rows].map(r=>r.map(esc).join(';')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-vinos.csv';a.click();URL.revokeObjectURL(url);}
-  function exportJson(){const blob=new Blob([JSON.stringify({app:'Celler Roig',version:14,exportedAt:new Date().toISOString(),wines},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-copia-seguridad.json';a.click();URL.revokeObjectURL(url);}
+  function exportCsv(){const esc=(v:unknown)=>`"${String(v??'').replace(/"/g,'""')}"`;const head=['Nombre','Bodega','Añada','Tipo','Uvas','Envejecimiento','Denominación/Appellation','Región','País','Maridaje','Botellas','Probado','Por probar','Regalo','Regalado por','Precio','Dónde lo compré/probé/vi','Graduación','Nota','Volvería a comprar','Notas'];const rows=wines.map(w=>[w.name,w.winery,w.vintage||'',w.type,w.grapes.join(' / '),displayAging(w),w.denomination,w.region,w.country,w.pairing,w.quantity,w.tried?'Sí':'No',w.wishlist?'Sí':'No',w.gifted?'Sí':'No',w.giftedBy,w.price??'',w.shop,w.alcohol??'',w.score??'',w.rebuy,w.notes]);const csv='\uFEFF'+[head,...rows].map(r=>r.map(esc).join(';')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-vinos.csv';a.click();URL.revokeObjectURL(url);}
+  function exportJson(){const blob=new Blob([JSON.stringify({app:'Celler Roig',version:15,exportedAt:new Date().toISOString(),wines},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-copia-seguridad.json';a.click();URL.revokeObjectURL(url);}
   async function importJson(file?:File){if(!file)return;try{const data=JSON.parse(await file.text());onImport(Array.isArray(data)?data:data.wines);}catch{alert('No he podido leer esa copia de seguridad.');}}
   return <div className="page settings-page"><Header eyebrow="CELLER ROIG" title="Ajustes" right={<button className="icon-button" onClick={onBack}><X/></button>}/>
     <div className="settings-card"><div className="settings-line"><div><strong>Pedro</strong><span>{wines.length} vinos guardados</span></div><WineIcon/></div><div className="settings-line"><div><strong>Sincronización</strong><span>{cloudCopy} · móvil y PC se actualizan automáticamente</span></div><Archive/></div></div>

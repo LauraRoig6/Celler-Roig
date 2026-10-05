@@ -151,11 +151,19 @@ function inferAppellation(text) {
   if (/denominación de origen|denominacion de origen|\bd\.o\.\b|\bdo\b|\bdop\b/.test(t)) return { denomination: '', region: '', protection: 'DOP' };
   return { denomination: '', region: '', protection: 'Sin indicación' };
 }
+const GRAPE_ALIASES={grenache:'Garnacha',garnatxa:'Garnacha','garnacha tinta':'Garnacha',shiraz:'Syrah','pinot grigio':'Pinot Gris',mourvedre:'Monastrell','mourvèdre':'Monastrell',mataro:'Monastrell','tinto fino':'Tempranillo','tinta del pais':'Tempranillo','tinta del país':'Tempranillo',cencibel:'Tempranillo','tinta roriz':'Tempranillo',viura:'Macabeo',carmenere:'Carmenère',semillon:'Sémillon','gruner veltliner':'Grüner Veltliner'};
+function canonicalGrape(value=''){const clean=String(value).trim().replace(/\s+/g,' ');return GRAPE_ALIASES[normalizedLabel(clean)]||clean;}
 function inferGrapes(text) {
-  const t = text.toLowerCase();
+  const t = normalizedLabel(text);
   const found = [];
+  const seen = new Set();
   for (const grape of GRAPES) {
-    if (t.includes(grape.toLowerCase()) && !found.some(x => x.toLowerCase() === grape.toLowerCase())) found.push(grape);
+    if (!t.includes(normalizedLabel(grape))) continue;
+    const canonical = canonicalGrape(grape);
+    const key = normalizedLabel(canonical);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    found.push(canonical);
   }
   return found.slice(0, 6);
 }
@@ -168,15 +176,15 @@ function pairingPreset(type, grapes = [], aging = '') {
   if (type === 'Espumoso') return 'Aperitivos, marisco, sushi, arroces y frituras';
   if (type === 'Rosado') return 'Aperitivos, ensaladas, pasta, arroces y cocina mediterránea';
   if (type === 'Blanco') {
-    if (/albarino|godello|verdejo|sauvignon|riesling/.test(all)) return 'Marisco, pescado, arroces marineros y quesos suaves';
-    if (/chardonnay|viognier/.test(all) && /roble|crianza|reserva/i.test(aging || '')) return 'Pescado al horno, aves, pasta cremosa y quesos semicurados';
+    if (/albarino|godello|verdejo|sauvignon|riesling/.test(all)) return 'Marisco, pescado, arroces y quesos suaves';
+    if (/chardonnay|viognier/.test(all) && /roble|crianza|reserva/i.test(aging || '')) return 'Pescado, aves, pasta cremosa y quesos semicurados';
     return 'Pescado, marisco, aperitivos y platos ligeros';
   }
   if (type === 'Tinto') {
-    if (/tempranillo|tinto fino|tinta del pais/.test(all)) return 'Cordero, carnes asadas, embutidos y quesos curados';
+    if (/tempranillo|tinto fino|tinta del pais/.test(all)) return 'Carnes rojas, asados, embutidos y quesos curados';
     if (/cabernet|syrah|shiraz|malbec|monastrell|bobal/.test(all)) return 'Carnes rojas, guisos, barbacoa y quesos intensos';
     if (/pinot noir|gamay/.test(all)) return 'Aves, setas, carnes blancas y quesos suaves';
-    if (/garnacha|grenache/.test(all)) return 'Carnes a la brasa, arroces de carne, embutidos y quesos';
+    if (/garnacha|grenache/.test(all)) return 'Carnes rojas, arroces, embutidos y quesos';
     return 'Carnes, guisos, embutidos y quesos';
   }
   return '';
