@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="520" viewBox="0 0 180 520">
+  <defs><filter id="s"><feDropShadow dx="5" dy="8" stdDeviation="6" flood-opacity=".22"/></filter><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#151217"/><stop offset=".42" stop-color="#251d22"/><stop offset=".68" stop-color="#251d22"/><stop offset="1" stop-color="#171317"/></linearGradient></defs>
+  <g filter="url(#s)">
+    <rect x="67" y="14" width="46" height="105" rx="9" fill="url(#g)"/>
+    <rect x="63" y="20" width="54" height="18" rx="4" fill="#6f1f33"/>
+    <path d="M65 100 C58 126 41 141 36 174 L28 454 Q28 493 62 500 H118 Q152 493 152 454 L144 174 C139 141 122 126 115 100Z" fill="url(#g)"/>
+    <rect x="45" y="235" width="90" height="112" rx="5" fill="#fbf6ed" stroke="#d8cabd" stroke-width="2"/>
+    <rect x="45" y="235" width="90" height="16" fill="#6f1f33" opacity=".9"/>
+    <text x="90" y="278" text-anchor="middle" font-family="Georgia,serif" font-size="13" font-weight="700" fill="#5c3841">BELLE RIVE</text>
+    <text x="90" y="304" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" fill="#755a61">2019</text>
+    <circle cx="90" cy="326" r="8" fill="#6f1f33"/>
+  </g>
+</svg>

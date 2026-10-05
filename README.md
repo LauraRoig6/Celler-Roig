@@ -1,22 +1,35 @@
-# Celler Roig V13
+# Celler Roig · V14
 
-Aplicación móvil/PWA para la vinoteca personal de Pedro.
+Vinoteca personal mobile-first de Pedro.
 
-## Cambios principales de V13
+## Novedades V14
 
-- Sincronización móvil ↔ PC reforzada: Neon pasa a ser la fuente común y la app refresca desde la nube al abrir, volver a la pestaña y cada pocos segundos. Los borrados se propagan entre dispositivos.
-- Tipos simplificados a Tinto, Blanco, Rosado y Espumoso; si la búsqueda no está segura, queda como “Sin indicar”.
-- Se elimina “Dónde está guardado” y desaparece el aviso para instalar la PWA.
-- Uvas, envejecimiento, clasificación oficial, denominación/appellation, región y país pasan a la ficha principal.
-- “Más información” queda para precio, contexto de compra/prueba/descubrimiento, graduación, puntuación, recompra y notas.
-- El campo cambia según el destino: “Dónde lo compré” (Vinoteca), “Dónde lo probé” (Probados) y “Dónde lo vi” (Por probar).
-- “Mejor momento para beber” se sustituye por Maridaje. Primero se intenta obtener de las fichas de tiendas especializadas; si no aparece, se propone una sugerencia prudente según tipo, uva y envejecimiento.
-- Se conserva “Abrir pronto” solo como marca manual.
+- **¿Qué abrimos hoy?** ahora acepta el nombre de un plato (por ejemplo, `paella mixta` o `cordero al horno con patatas panadera`) y compara ese plato con los maridajes de las botellas disponibles en la Vinoteca. El botón ✨ mantiene el modo **Sorpréndeme**.
+- Cabeceras **fijas (sticky)** para que la navegación se sienta más como una app móvil:
+  - Inicio: logo + buscador.
+  - Vinoteca: cabecera, buscador, filtros, orden y título `Mi estantería`.
+  - Probados: cabecera + buscador.
+  - Por probar: cabecera + texto explicativo.
+- En `Mi orden`, el modo para reorganizar la estantería se activa con el icono de puntos/agarre junto al selector. El icono desaparece con los demás criterios de ordenación.
+- La Vinoteca ya no muestra el número de baldas; solo el total de botellas.
+- Branding: `CELLER ROIG` en una sola línea y subtítulo `La vinoteca de Pedro`.
+- Nueva colección demo de **5 vinos ficticios con fichas completas**:
+  - 3 en Vinoteca (uno regalado, uno pendiente de probar y uno probado),
+  - 1 solo en Probados,
+  - 1 en Por probar.
+- V14 elimina los vinos de ejemplo antiguos y los sustituye por los nuevos, conservando cualquier vino real añadido por el usuario.
 
-## Variables de Vercel
+## Variables de entorno en Vercel
 
-- `DATABASE_URL` — Neon PostgreSQL.
-- `SERPER_API_KEY` — búsquedas web e imágenes por texto.
-- `SERPAPI_API_KEY` — búsqueda por foto/Google Lens.
+- `DATABASE_URL` → Neon PostgreSQL.
+- `SERPER_API_KEY` → búsqueda escrita de botellas/fichas.
+- `SERPAPI_API_KEY` → búsqueda por foto con Google Lens, si se sigue utilizando.
 
-No incluyas estas claves en GitHub.
+## Desarrollo
+
+```bash
+npm install
+npm run build
+```
+
+El proyecto usa Vite + React + TypeScript y está preparado para desplegarse en Vercel.

@@ -121,3 +121,52 @@ body{overscroll-behavior-y:none}
 
 /* V13: ficha principal y maridaje */
 .pairing-field textarea{margin-bottom:0}.pairing-source{display:block;margin-top:6px;font-size:10px;line-height:1.35;color:var(--muted);font-weight:700}.pairing-source:first-letter{color:var(--gold)}
+
+/* V14 · cabeceras fijas, recomendador por comida y estantería más limpia */
+.sticky-head{position:sticky;top:0;z-index:70;background:var(--cream);margin-left:-18px;margin-right:-18px;padding-left:18px;padding-right:18px;border-bottom:1px solid rgba(231,221,215,.92);box-shadow:0 8px 18px rgba(64,38,44,.045)}
+.home-sticky{margin-top:-18px;padding-top:18px;padding-bottom:8px}
+.home-sticky .brand-hero{margin:-18px -18px 10px;border-radius:0 0 24px 24px}
+.home-sticky .searchbox{margin-bottom:0}
+.brand-name{white-space:nowrap;font-size:32px;letter-spacing:.02em}
+.brand-sub{white-space:nowrap}
+.sticky-follow-results{margin-top:10px}
+
+.cellar-sticky,.tried-sticky,.wishlist-sticky{margin-top:-18px;padding-top:18px;padding-bottom:8px}
+.cellar-sticky .page-header,.tried-sticky .page-header,.wishlist-sticky .page-header{margin-bottom:9px}
+.cellar-sticky .page-intro,.tried-sticky .page-intro,.wishlist-sticky .page-intro{margin-top:0;margin-bottom:9px}
+.cellar-sticky .searchbox,.tried-sticky .searchbox{margin-bottom:9px}
+.cellar-sticky .filter-scroll{padding-bottom:7px}
+.cellar-sticky .filter-row{margin-bottom:7px}
+.sort-control{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center}
+.manual-order-btn{width:44px;height:44px;border:1px solid var(--line);border-radius:13px;background:#fff;color:var(--burgundy);display:grid;place-items:center;flex:0 0 auto}
+.manual-order-btn.active{background:var(--burgundy);border-color:var(--burgundy);color:#fff;box-shadow:0 5px 14px rgba(110,31,50,.18)}
+.sort-menu{z-index:95}
+.cellar-shelf-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:5px 1px 1px}
+.cellar-shelf-bar h2{margin:0;font-family:Georgia,"Times New Roman",serif;font-size:18px;color:var(--ink)}
+.cellar-shelf-bar span{font-size:11px;color:var(--muted);font-weight:700}
+.shelf-groups{margin-top:14px}
+.shelf-section>.shelf-stack:first-child{margin-top:0}
+.shelf-heading span{font-weight:650}
+
+.food-card{padding:14px}
+.food-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.food-card-head .open-title{min-width:0;flex:1}
+.food-modes{display:flex;align-items:center;gap:5px;flex:0 0 auto}
+.food-mode{height:34px;border:1px solid #dbc8c1;border-radius:11px;background:#fff;color:var(--burgundy);font-size:10px;font-weight:800;padding:0 9px;display:flex;align-items:center;justify-content:center;gap:5px}
+.food-mode.active{background:var(--burgundy-soft);border-color:#d7b7c0}
+.food-mode.sparkle{width:36px;padding:0;background:var(--burgundy);border-color:var(--burgundy);color:#fff}
+.dish-input{margin-top:12px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center}
+.dish-input input{height:46px;border:1px solid var(--line);border-radius:13px;background:#fff;padding:0 12px;color:var(--ink);outline:none;min-width:0}
+.dish-input input:focus{border-color:#b88b98;box-shadow:0 0 0 3px rgba(110,31,50,.07)}
+.dish-input button{height:46px;border:0;border-radius:13px;background:var(--burgundy);color:#fff;padding:0 12px;font-weight:800;font-size:11px}
+.dish-input button:disabled{opacity:.45;cursor:default}
+.food-card .suggested-wine{margin-top:10px}
+.food-card .suggested-wine em{display:block;margin-top:4px;font-style:normal;font-size:9.5px;line-height:1.35;color:#7a666c;white-space:normal}
+
+@media(max-width:390px){
+  .brand-name{font-size:28px}
+  .brand-sub{font-size:11px}
+  .brand-hero{gap:11px}
+  .brand-mark{width:46px;height:46px}
+  .food-card-head{display:block}.food-modes{margin-top:9px}.food-mode.active{flex:1}.dish-input{grid-template-columns:1fr}.dish-input button{width:100%}
+}

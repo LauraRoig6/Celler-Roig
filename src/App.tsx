@@ -3,7 +3,7 @@ import {
   Archive, Camera, ChevronDown, CirclePlus, Clock3, Gift, Heart, Home, ImagePlus,
   List, Mic, Minus, Pencil, Plus, Search, Settings, SlidersHorizontal, Sparkles,
   Star, Trash2, Undo2, Wine as WineIcon, X, Check, ShoppingBag, GlassWater, GripVertical,
-  ExternalLink, RotateCcw, CheckCircle2, Download, Upload, BarChart3,
+  ExternalLink, RotateCcw, CheckCircle2, Download, Upload, BarChart3, Utensils,
 } from 'lucide-react';
 import {
   DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
@@ -45,6 +45,16 @@ const emptyForm = (): EditableWine => ({
   score: undefined, notes: '', rebuy: '', imageUrl: '', gifted: false, openSoon: false, pairing: '', pairingSource: '', giftedBy: '', giftDate: '',
   tastings: [], lastTastedAt: undefined,
 });
+
+const LEGACY_DEMO_NAMES = new Set(['Viña Ardanza','Muga Crianza','Protos 27','Mar de Frades','Les Alcusses','Finca Terrerazo']);
+function migrateLegacyDemos(list: Wine[]) {
+  if (!list.some(w => LEGACY_DEMO_NAMES.has(w.name))) return { changed: false, wines: list };
+  const demoIds = new Set(seedWines.map(w => w.id));
+  const kept = list.filter(w => !LEGACY_DEMO_NAMES.has(w.name) && !demoIds.has(w.id));
+  const baseOrder = Math.max(-1, ...kept.map(w => w.manualOrder));
+  const demos = normalizeCollection(seedWines).map((w,i) => ({ ...w, manualOrder: baseOrder + i + 1 }));
+  return { changed: true, wines: [...kept, ...demos] };
+}
 
 function normalizeWine(raw: Partial<Wine>): Wine {
   const legacyWishlist = raw.wishlist ?? raw.status === 'wishlist';
@@ -94,12 +104,67 @@ function pairingSuggestion(type: WineType, grapes: string[], aging: Aging = 'Sin
   return '';
 }
 
+
+function normalizeFood(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+}
+
+function dishHints(dish: string) {
+  const q = normalizeFood(dish);
+  const hints = new Set<string>(q.split(' ').filter(x => x.length > 2));
+  const add = (...values:string[]) => values.forEach(v => hints.add(v));
+  if (/paella|arroz|risotto/.test(q)) add('arroz','arroces');
+  if (/paella.*mixta|mixta.*paella/.test(q)) add('marisco','carne','aves','mediterranea');
+  if (/cordero|lechazo|cabrito/.test(q)) add('cordero','lechazo','carnes','asadas','guisos');
+  if (/ternera|buey|vaca|chuleton|entrecot|solomillo/.test(q)) add('carnes','rojas','asadas','barbacoa');
+  if (/cerdo|secreto|presa|costilla/.test(q)) add('carnes','asadas','barbacoa');
+  if (/pollo|pavo|ave|aves/.test(q)) add('aves','carnes','blancas');
+  if (/pescado|merluza|lubina|dorada|bacalao|salmon|atun/.test(q)) add('pescado','marino');
+  if (/marisco|gamba|langostino|mejillon|ostra|vieira/.test(q)) add('marisco','pescado');
+  if (/sushi|sashimi/.test(q)) add('sushi','pescado','fresco');
+  if (/pasta|lasana|lasaña|pizza/.test(q)) add('pasta','mediterranea');
+  if (/queso|tabla/.test(q)) add('quesos');
+  if (/seta|setas|hongo|hongos/.test(q)) add('setas');
+  if (/aperitivo|tapa|tapas|entrante/.test(q)) add('aperitivos');
+  return { q, hints: [...hints] };
+}
+
+function scoreWineForDish(wine: Wine, dish: string) {
+  const { q, hints } = dishHints(dish);
+  const fallbackPairing = wine.pairing || pairingSuggestion(wine.type, wine.grapes, wine.aging);
+  const hay = normalizeFood([fallbackPairing, wine.type, ...wine.grapes, displayAging(wine), wine.denomination].join(' '));
+  let score = 0;
+  if (q && hay.includes(q)) score += 16;
+  for (const hint of hints) if (hint.length > 2 && hay.includes(hint)) score += hint.length > 5 ? 3.2 : 2.2;
+  // Reglas suaves solo para desempatar cuando el maridaje escrito no basta.
+  if (/cordero|lechazo|cabrito|ternera|buey|chuleton|entrecot|solomillo|carne|costilla|cerdo/.test(q) && wine.type === 'Tinto') score += 4;
+  if (/pescado|merluza|lubina|dorada|marisco|gamba|langostino|sushi/.test(q) && ['Blanco','Rosado','Espumoso'].includes(wine.type)) score += 4;
+  if (/paella|arroz/.test(q)) {
+    if (['Blanco','Rosado'].includes(wine.type)) score += 2.5;
+    if (wine.type === 'Tinto' && ['Joven','Roble','Sin indicar'].includes(wine.aging)) score += 1.5;
+    if (/marisco|pescado|arroces|arroz/.test(hay)) score += 4;
+  }
+  if (/queso/.test(q) && ['Tinto','Espumoso'].includes(wine.type)) score += 1.5;
+  if (wine.favorite) score += .7;
+  if (wine.score != null) score += Math.max(0, wine.score - 7) * .35;
+  return { score, pairing: fallbackPairing };
+}
+
+function recommendWineForDish(cellar: Wine[], dish: string) {
+  if (!cellar.length || !dish.trim()) return null;
+  const ranked = cellar.map(w => ({ wine: w, ...scoreWineForDish(w,dish) })).sort((a,b) => b.score-a.score || (b.wine.score||0)-(a.wine.score||0));
+  const best = ranked[0];
+  if (!best) return null;
+  return { wine: best.wine, reason: best.pairing ? `Encaja con su maridaje: ${best.pairing}` : `Es la opción que mejor encaja con “${dish.trim()}”.` };
+}
+
 function App() {
   const [tab, setTab] = useState<Tab>('home');
   const [wines, setWines] = useState<Wine[]>(() => {
     try {
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-      return parsed ? normalizeCollection(parsed) : normalizeCollection(seedWines);
+      const local = parsed ? normalizeCollection(parsed) : normalizeCollection(seedWines);
+      return migrateLegacyDemos(local).wines;
     } catch { return normalizeCollection(seedWines); }
   });
   const [selectedWine, setSelectedWine] = useState<Wine | null>(null);
@@ -131,6 +196,15 @@ function App() {
         return;
       }
       const remoteWines = normalizeCollection(data.wines);
+      // Sustituye únicamente los ejemplos antiguos por los nuevos, conservando
+      // cualquier vino real que ya hubiera añadido Pedro.
+      const migrated = migrateLegacyDemos(remoteWines);
+      if (migrated.changed) {
+        setWines(migrated.wines);
+        await fetch('/api/wines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wines: migrated.wines, replace: true }) });
+        setCloudStatus('synced');
+        return;
+      }
       // Neon es la fuente común entre móvil y PC. Incluso una colección vacía
       // debe sustituir la copia local para que los borrados se propaguen.
       setWines(remoteWines);
@@ -387,33 +461,34 @@ function HomeScreen({ wines, cellar, tried, wishlist, favorites, bottleCount, on
   wines: Wine[]; cellar: Wine[]; tried: Wine[]; wishlist: Wine[]; favorites: Wine[]; bottleCount: number; onOpen:(w:Wine)=>void; onGo:(t:Tab)=>void; onAdd:()=>void;
 }) {
   const [globalSearch, setGlobalSearch] = useState('');
-  const [suggested, setSuggested] = useState<Wine | null>(null);
+  const [dish, setDish] = useState('');
+  const [suggested, setSuggested] = useState<{wine:Wine;reason:string}|null>(null);
   const recent = [...wines].sort((a,b) => (b.lastTastedAt || b.createdAt).localeCompare(a.lastTastedAt || a.createdAt)).slice(0, 4);
   const q = globalSearch.trim();
   const results = q ? wines.filter(w => wineMatchesQuery(w,q)).slice(0,5) : [];
   const openSoon = cellar.filter(w => w.openSoon).slice(0,4);
 
-  function suggest(kind:'carne'|'pescado'|'aperitivo'|'sorpresa') {
-    let candidates = cellar;
-    if (kind === 'carne') candidates = cellar.filter(w => w.type === 'Tinto');
-    if (kind === 'pescado') candidates = cellar.filter(w => ['Blanco','Rosado','Espumoso'].includes(w.type));
-    if (kind === 'aperitivo') candidates = cellar.filter(w => ['Blanco','Rosado','Espumoso'].includes(w.type));
-    if (!candidates.length) candidates = cellar;
-    const ranked = [...candidates].sort((a,b) => (b.favorite?1:0)-(a.favorite?1:0) || (b.score||0)-(a.score||0));
-    const pool = ranked.slice(0, Math.min(5, ranked.length));
-    setSuggested(pool.length ? pool[Math.floor(Math.random()*pool.length)] : null);
+  function recommendDish() {
+    const result = recommendWineForDish(cellar,dish);
+    setSuggested(result);
+  }
+  function surprise() {
+    if (!cellar.length) return setSuggested(null);
+    const pool = [...cellar].sort((a,b)=>(b.favorite?1:0)-(a.favorite?1:0)||(b.score||0)-(a.score||0)).slice(0,Math.min(6,cellar.length));
+    const wine = pool[Math.floor(Math.random()*pool.length)];
+    setSuggested({wine,reason:'Hoy dejamos que Celler Roig elija por ti.'});
   }
 
   return <div className="page home-page">
-    <section className="brand-hero">
-      <div className="brand-mark"><WineIcon size={28}/></div>
-      <div className="brand-copy"><div className="brand-name">CELLER ROIG</div><div className="brand-sub">La vinoteca de Pedro Roig</div></div>
-      <button className="hero-settings" onClick={()=>onGo('settings')} aria-label="Ajustes"><Settings/></button>
-    </section>
-
-
-    <div className="searchbox global-search"><Search size={20}/><input value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} placeholder="Buscar en Celler Roig…"/></div>
-    {q && <div className="global-results">{results.length ? results.map(w=><button key={w.id} onClick={()=>onOpen(w)}><BottleVisual wine={w} compact/><div><strong>{w.name}</strong><span>{w.denomination || w.winery}{w.vintage?` · ${w.vintage}`:''}</span></div></button>) : <span>No encuentro ese vino.</span>}</div>}
+    <div className="sticky-head home-sticky">
+      <section className="brand-hero">
+        <div className="brand-mark"><WineIcon size={28}/></div>
+        <div className="brand-copy"><div className="brand-name">CELLER ROIG</div><div className="brand-sub">La vinoteca de Pedro</div></div>
+        <button className="hero-settings" onClick={()=>onGo('settings')} aria-label="Ajustes"><Settings/></button>
+      </section>
+      <div className="searchbox global-search"><Search size={20}/><input value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} placeholder="Buscar en Celler Roig…"/></div>
+    </div>
+    {q && <div className="global-results sticky-follow-results">{results.length ? results.map(w=><button key={w.id} onClick={()=>onOpen(w)}><BottleVisual wine={w} compact/><div><strong>{w.name}</strong><span>{w.denomination || w.winery}{w.vintage?` · ${w.vintage}`:''}</span></div></button>) : <span>No encuentro ese vino.</span>}</div>}
 
     <section className="stats-grid">
       <button className="stat-card" onClick={() => onGo('cellar')}><strong>{bottleCount}</strong><span>botellas en casa</span></button>
@@ -423,7 +498,11 @@ function HomeScreen({ wines, cellar, tried, wishlist, favorites, bottleCount, on
 
     <button className="primary big-action" onClick={onAdd}><CirclePlus size={23}/> Añadir un vino</button>
 
-    {cellar.length > 0 && <section className="open-tonight-card"><div className="open-title"><Sparkles/><div><strong>¿Qué abrimos hoy?</strong><span>Te propongo una botella que tengas en casa.</span></div></div><div className="suggest-chips"><button onClick={()=>suggest('carne')}>Carne</button><button onClick={()=>suggest('pescado')}>Pescado</button><button onClick={()=>suggest('aperitivo')}>Aperitivo</button><button onClick={()=>suggest('sorpresa')}>Sorpréndeme</button></div>{suggested&&<button className="suggested-wine" onClick={()=>onOpen(suggested)}><BottleVisual wine={suggested} compact/><div><small>Mi propuesta</small><strong>{suggested.name}</strong><span>{suggested.vintage || 'Sin añada'} · {suggested.quantity} en casa</span></div></button>}</section>}
+    {cellar.length > 0 && <section className="open-tonight-card food-card">
+      <div className="food-card-head"><div className="open-title"><Utensils/><div><strong>¿Qué abrimos hoy?</strong><span>Dime qué vais a comer y busco la botella que mejor encaja.</span></div></div><div className="food-modes"><button className="food-mode active" onClick={recommendDish}><Utensils size={15}/> Comida</button><button className="food-mode sparkle" onClick={surprise} aria-label="Sorpréndeme" title="Sorpréndeme"><Sparkles size={18}/></button></div></div>
+      <div className="dish-input"><input value={dish} onChange={e=>setDish(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')recommendDish()}} placeholder="Ej. cordero al horno con patatas panadera"/><button onClick={recommendDish} disabled={!dish.trim()}>Recomendar</button></div>
+      {suggested&&<button className="suggested-wine" onClick={()=>onOpen(suggested.wine)}><BottleVisual wine={suggested.wine} compact/><div><small>Mi propuesta</small><strong>{suggested.wine.name}</strong><span>{suggested.wine.vintage || 'Sin añada'} · {suggested.wine.quantity} en casa</span><em>{suggested.reason}</em></div></button>}
+    </section>}
 
     {openSoon.length>0&&<section className="attention-card"><div className="open-title"><Clock3/><div><strong>Para abrir pronto</strong><span>Botellas que has marcado para tenerlas a mano.</span></div></div><div className="mini-list">{openSoon.map(w=><button key={w.id} className="mini-row" onClick={()=>onOpen(w)}><BottleVisual wine={w} compact/><div className="mini-copy"><strong>{w.name}</strong><span>Marcado para abrir pronto</span></div><Clock3 size={17}/></button>)}</div></section>}
 
@@ -444,6 +523,7 @@ function CellarScreen(props: {
   onOpen:(w:Wine)=>void; editingShelf:boolean; setEditingShelf:(v:boolean)=>void; onReorder:(ids:string[])=>void;
 }) {
   const sensors = useSensors(useSensor(PointerSensor,{activationConstraint:{distance:8}}),useSensor(TouchSensor,{activationConstraint:{delay:220,tolerance:8}}));
+  const bottleCount = props.wines.reduce((sum,w)=>sum+w.quantity,0);
   function dragEnd(event: DragEndEvent) {
     if (props.sortMode !== 'manual') return;
     const { active, over } = event; if (!over || active.id===over.id) return;
@@ -451,20 +531,23 @@ function CellarScreen(props: {
     props.onReorder(arrayMove(ids,oldIndex,newIndex));
   }
   return <div className="page cellar-page">
-    <Header eyebrow="EN CASA" title="Vinoteca" right={<div className="view-toggle"><button className={props.viewMode==='shelf'?'active':''} onClick={()=>props.setViewMode('shelf')}><Archive size={18}/></button><button className={props.viewMode==='list'?'active':''} onClick={()=>props.setViewMode('list')}><List size={18}/></button></div>} />
-    <p className="page-intro compact-intro">Aquí aparecen solo las botellas que tienes ahora mismo en casa.</p>
-    <div className="searchbox"><Search size={20}/><input value={props.search} onChange={e=>props.setSearch(e.target.value)} placeholder="Buscar vino, uva, denominación…"/></div>
-    <div className="filter-scroll">{(['Todos','Tinto','Blanco','Rosado','Espumoso','Favoritos','Regalos','Abrir pronto'] as const).map(x=><button key={x} className={props.typeFilter===x?'chip active':'chip'} onClick={()=>props.setTypeFilter(x)}>{x}</button>)}</div>
-    <div className="filter-row"><div className="sort-wrap"><button className="sort-button" onClick={()=>props.setSortOpen(!props.sortOpen)}><SlidersHorizontal size={18}/>{sortOptions.find(x=>x.value===props.sortMode)?.label}<ChevronDown size={17}/></button>{props.sortOpen&&<div className="sort-menu">{sortOptions.map(o=><button key={o.value} onClick={()=>{props.setSortMode(o.value);props.setSortOpen(false);props.setEditingShelf(false)}} className={props.sortMode===o.value?'chosen':''}>{o.label}{props.sortMode===o.value&&<Check size={17}/>}</button>)}</div>}</div></div>
-    {props.sortMode==='manual'&&props.viewMode==='shelf'&&<button className={props.editingShelf?'edit-shelf active':'edit-shelf'} onClick={()=>props.setEditingShelf(!props.editingShelf)}><GripVertical size={18}/>{props.editingShelf?'Terminar de ordenar':'Ordenar estantería'}</button>}
-    {props.wines.length===0?<EmptyState title="Tu vinoteca está vacía" text="Cuando registres una botella que tengas en casa aparecerá aquí."/>:props.viewMode==='shelf'?<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}><div className="shelf-groups">{props.groups.map(([label,ws])=><ShelfGroup key={label} label={label} wines={ws} onOpen={props.onOpen} draggable={props.sortMode==='manual'&&props.editingShelf}/>)}</div></DndContext>:<div className="wine-list">{props.wines.map(w=><WineListRow key={w.id} wine={w} onClick={()=>props.onOpen(w)}/>)}</div>}
+    <div className="sticky-head cellar-sticky">
+      <Header eyebrow="EN CASA" title="Vinoteca" right={<div className="view-toggle"><button className={props.viewMode==='shelf'?'active':''} onClick={()=>props.setViewMode('shelf')}><Archive size={18}/></button><button className={props.viewMode==='list'?'active':''} onClick={()=>props.setViewMode('list')}><List size={18}/></button></div>} />
+      <p className="page-intro compact-intro">Aquí aparecen solo las botellas que tienes ahora mismo en casa.</p>
+      <div className="searchbox"><Search size={20}/><input value={props.search} onChange={e=>props.setSearch(e.target.value)} placeholder="Buscar vino, uva, denominación…"/></div>
+      <div className="filter-scroll">{(['Todos','Tinto','Blanco','Rosado','Espumoso','Favoritos','Regalos','Abrir pronto'] as const).map(x=><button key={x} className={props.typeFilter===x?'chip active':'chip'} onClick={()=>props.setTypeFilter(x)}>{x}</button>)}</div>
+      <div className="filter-row"><div className="sort-wrap"><div className="sort-control"><button className="sort-button" onClick={()=>props.setSortOpen(!props.sortOpen)}><SlidersHorizontal size={18}/>{sortOptions.find(x=>x.value===props.sortMode)?.label}<ChevronDown size={17}/></button>{props.sortMode==='manual'&&props.viewMode==='shelf'&&<button className={props.editingShelf?'manual-order-btn active':'manual-order-btn'} onClick={()=>props.setEditingShelf(!props.editingShelf)} title={props.editingShelf?'Terminar de ordenar':'Ordenar estantería'} aria-label={props.editingShelf?'Terminar de ordenar':'Ordenar estantería'}><GripVertical size={19}/></button>}</div>{props.sortOpen&&<div className="sort-menu">{sortOptions.map(o=><button key={o.value} onClick={()=>{props.setSortMode(o.value);props.setSortOpen(false);props.setEditingShelf(false)}} className={props.sortMode===o.value?'chosen':''}>{o.label}{props.sortMode===o.value&&<Check size={17}/>}</button>)}</div>}</div></div>
+      <div className="cellar-shelf-bar"><h2>Mi estantería</h2><span>{bottleCount} {bottleCount===1?'botella':'botellas'}</span></div>
+    </div>
+    {props.wines.length===0?<EmptyState title="Tu vinoteca está vacía" text="Cuando registres una botella que tengas en casa aparecerá aquí."/>:props.viewMode==='shelf'?<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={dragEnd}><div className="shelf-groups">{props.groups.map(([label,ws])=><ShelfGroup key={label} label={label} wines={ws} onOpen={props.onOpen} draggable={props.sortMode==='manual'&&props.editingShelf} hideHeading={props.sortMode==='manual'}/>)}</div></DndContext>:<div className="wine-list">{props.wines.map(w=><WineListRow key={w.id} wine={w} onClick={()=>props.onOpen(w)}/>)}</div>}
   </div>;
 }
 
 const SHELF_CAPACITY=3;
-function ShelfGroup({label,wines,onOpen,draggable}:{label:string;wines:Wine[];onOpen:(w:Wine)=>void;draggable:boolean}) {
+function ShelfGroup({label,wines,onOpen,draggable,hideHeading=false}:{label:string;wines:Wine[];onOpen:(w:Wine)=>void;draggable:boolean;hideHeading?:boolean}) {
   const shelves:Wine[][]=[]; for(let i=0;i<wines.length;i+=SHELF_CAPACITY)shelves.push(wines.slice(i,i+SHELF_CAPACITY));
-  return <section className="shelf-section"><div className="shelf-heading"><h2>{label}</h2><span>{wines.length} {wines.length===1?'vino':'vinos'} · {shelves.length} {shelves.length===1?'balda':'baldas'}</span></div><SortableContext items={wines.map(w=>w.id)} strategy={rectSortingStrategy}><div className="shelf-stack">{shelves.map((row,index)=><div className="shelf-row" key={`${label}-${index}`}><div className="shelf-grid">{row.map(w=><SortableBottle key={w.id} wine={w} onOpen={onOpen} enabled={draggable}/>)}</div><div className="wood-shelf" aria-hidden="true"><div/></div></div>)}</div></SortableContext></section>;
+  const bottles=wines.reduce((sum,w)=>sum+w.quantity,0);
+  return <section className="shelf-section">{!hideHeading&&<div className="shelf-heading"><h2>{label}</h2><span>{bottles} {bottles===1?'botella':'botellas'}</span></div>}<SortableContext items={wines.map(w=>w.id)} strategy={rectSortingStrategy}><div className="shelf-stack">{shelves.map((row,index)=><div className="shelf-row" key={`${label}-${index}`}><div className="shelf-grid">{row.map(w=><SortableBottle key={w.id} wine={w} onOpen={onOpen} enabled={draggable}/>)}</div><div className="wood-shelf" aria-hidden="true"><div/></div></div>)}</div></SortableContext></section>;
 }
 
 function SortableBottle({wine,onOpen,enabled}:{wine:Wine;onOpen:(w:Wine)=>void;enabled:boolean}) {
@@ -489,11 +572,11 @@ function WineListRow({wine,onClick}:{wine:Wine;onClick:()=>void}) {
 function TriedScreen({wines,onOpen,onAdd}:{wines:Wine[];onOpen:(w:Wine)=>void;onAdd:()=>void}) {
   const [q,setQ]=useState('');
   const filtered=useMemo(()=>[...wines].filter(w=>wineMatchesQuery(w,q)).sort((a,b)=>(b.lastTastedAt||b.createdAt).localeCompare(a.lastTastedAt||a.createdAt)),[wines,q]);
-  return <div className="page tried-page"><Header eyebrow="TU MEMORIA" title="Probados" right={<button className="circle-action" onClick={onAdd}><Plus/></button>}/><p className="page-intro">Aquí quedan los vinos que ya has probado, aunque ya no tengas ninguna botella.</p><div className="searchbox"><Search size={20}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar entre los probados…"/></div>{filtered.length===0?<EmptyState title="Aún no hay vinos probados" text="Cuando marques un vino como probado quedará guardado aquí." action="Añadir un probado" onAction={onAdd}/>:<div className="tried-list">{filtered.map(w=><button key={w.id} className="tried-card" onClick={()=>onOpen(w)}><div className="tried-photo"><BottleVisual wine={w}/></div><div className="tried-copy"><div><strong>{w.name}</strong>{w.score!=null&&<span className="score-pill"><Star size={13} fill="currentColor"/>{w.score}</span>}</div><span>{w.denomination||w.winery}{w.vintage?` · ${w.vintage}`:''}</span><small>{w.lastTastedAt?`Última vez: ${formatDate(w.lastTastedAt)}`:'Probado'}{w.quantity>0?` · ${w.quantity} en casa`:''}</small>{w.rebuy&&<em>{w.rebuy==='Sí'?'✓ Lo compraría otra vez':`Volver a comprar: ${w.rebuy}`}</em>}</div></button>)}</div>}</div>;
+  return <div className="page tried-page"><div className="sticky-head tried-sticky"><Header eyebrow="TU MEMORIA" title="Probados" right={<button className="circle-action" onClick={onAdd}><Plus/></button>}/><p className="page-intro">Aquí quedan los vinos que ya has probado, aunque ya no tengas ninguna botella.</p><div className="searchbox"><Search size={20}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar entre los probados…"/></div></div>{filtered.length===0?<EmptyState title="Aún no hay vinos probados" text="Cuando marques un vino como probado quedará guardado aquí." action="Añadir un probado" onAction={onAdd}/>:<div className="tried-list">{filtered.map(w=><button key={w.id} className="tried-card" onClick={()=>onOpen(w)}><div className="tried-photo"><BottleVisual wine={w}/></div><div className="tried-copy"><div><strong>{w.name}</strong>{w.score!=null&&<span className="score-pill"><Star size={13} fill="currentColor"/>{w.score}</span>}</div><span>{w.denomination||w.winery}{w.vintage?` · ${w.vintage}`:''}</span><small>{w.lastTastedAt?`Última vez: ${formatDate(w.lastTastedAt)}`:'Probado'}{w.quantity>0?` · ${w.quantity} en casa`:''}</small>{w.rebuy&&<em>{w.rebuy==='Sí'?'✓ Lo compraría otra vez':`Volver a comprar: ${w.rebuy}`}</em>}</div></button>)}</div>}</div>;
 }
 
 function WishlistScreen({wines,onOpen,onAdd}:{wines:Wine[];onOpen:(w:Wine)=>void;onAdd:()=>void}) {
-  return <div className="page wishlist-page"><Header eyebrow="LISTA DE DESEOS" title="Por probar" right={<button className="circle-action" onClick={onAdd}><Plus/></button>}/><p className="page-intro">Vinos que has visto, te han recomendado o quieres comprar algún día.</p>{wines.length===0?<EmptyState title="Tu lista está vacía" text="Añade vinos que quieras probar más adelante." action="Añadir vino" onAction={onAdd}/>:<div className="wishlist-grid">{wines.map(w=><button className="wish-card" key={w.id} onClick={()=>onOpen(w)}><div className="wish-image"><BottleVisual wine={w}/></div><div><strong>{w.name}</strong><span>{w.winery}</span>{w.denomination&&<small>{w.denomination}</small>}</div></button>)}</div>}</div>;
+  return <div className="page wishlist-page"><div className="sticky-head wishlist-sticky"><Header eyebrow="LISTA DE DESEOS" title="Por probar" right={<button className="circle-action" onClick={onAdd}><Plus/></button>}/><p className="page-intro">Vinos que has visto, te han recomendado o quieres comprar algún día.</p></div>{wines.length===0?<EmptyState title="Tu lista está vacía" text="Añade vinos que quieras probar más adelante." action="Añadir vino" onAction={onAdd}/>:<div className="wishlist-grid">{wines.map(w=><button className="wish-card" key={w.id} onClick={()=>onOpen(w)}><div className="wish-image"><BottleVisual wine={w}/></div><div><strong>{w.name}</strong><span>{w.winery}</span>{w.denomination&&<small>{w.denomination}</small>}</div></button>)}</div>}</div>;
 }
 
 type ImportedWineData={name?:string;winery?:string;vintage?:number;type?:WineType;typeConfidence?:number;grapes?:string[];aging?:Aging;protection?:Protection;classification?:string;denomination?:string;region?:string;country?:string;alcohol?:number;price?:number;imageUrl?:string;sourceUrl?:string;sourceTitle?:string;fieldsFound?:number;categories?:string;rawText?:string;pairing?:string;pairingSource?:string;};
@@ -654,7 +737,7 @@ function SettingsScreen({wines,cloudStatus,onBack,onReset,onImport}:{wines:Wine[
   const topValue=(values:string[])=>{const counts=new Map<string,number>();values.filter(Boolean).forEach(v=>counts.set(v,(counts.get(v)||0)+1));return [...counts.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||'—';};
   const topDenomination=topValue(wines.map(w=>w.denomination)); const topGrape=topValue(wines.flatMap(w=>w.grapes));
   function exportCsv(){const esc=(v:unknown)=>`"${String(v??'').replace(/"/g,'""')}"`;const head=['Nombre','Bodega','Añada','Tipo','Uvas','Envejecimiento','Clasificación','Denominación/Appellation','Región','País','Maridaje','Botellas','Probado','Por probar','Regalo','Regalado por','Precio','Dónde lo compré/probé/vi','Graduación','Nota','Volvería a comprar','Notas'];const rows=wines.map(w=>[w.name,w.winery,w.vintage||'',w.type,w.grapes.join(' / '),displayAging(w),w.classification,w.denomination,w.region,w.country,w.pairing,w.quantity,w.tried?'Sí':'No',w.wishlist?'Sí':'No',w.gifted?'Sí':'No',w.giftedBy,w.price??'',w.shop,w.alcohol??'',w.score??'',w.rebuy,w.notes]);const csv='\uFEFF'+[head,...rows].map(r=>r.map(esc).join(';')).join('\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-vinos.csv';a.click();URL.revokeObjectURL(url);}
-  function exportJson(){const blob=new Blob([JSON.stringify({app:'Celler Roig',version:13,exportedAt:new Date().toISOString(),wines},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-copia-seguridad.json';a.click();URL.revokeObjectURL(url);}
+  function exportJson(){const blob=new Blob([JSON.stringify({app:'Celler Roig',version:14,exportedAt:new Date().toISOString(),wines},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='celler-roig-copia-seguridad.json';a.click();URL.revokeObjectURL(url);}
   async function importJson(file?:File){if(!file)return;try{const data=JSON.parse(await file.text());onImport(Array.isArray(data)?data:data.wines);}catch{alert('No he podido leer esa copia de seguridad.');}}
   return <div className="page settings-page"><Header eyebrow="CELLER ROIG" title="Ajustes" right={<button className="icon-button" onClick={onBack}><X/></button>}/>
     <div className="settings-card"><div className="settings-line"><div><strong>Pedro</strong><span>{wines.length} vinos guardados</span></div><WineIcon/></div><div className="settings-line"><div><strong>Sincronización</strong><span>{cloudCopy} · móvil y PC se actualizan automáticamente</span></div><Archive/></div></div>
