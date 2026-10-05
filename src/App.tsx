@@ -3,7 +3,7 @@ import {
   Archive, Camera, ChevronDown, CirclePlus, Clock3, Gift, Heart, Home, ImagePlus,
   List, Mic, Minus, Pencil, Plus, Search, Settings, SlidersHorizontal, Sparkles,
   Star, Trash2, Undo2, Wine as WineIcon, X, Check, ShoppingBag, GlassWater, GripVertical,
-  ExternalLink, RotateCcw, CheckCircle2, Download, Upload, BarChart3, Utensils,
+  ExternalLink, CheckCircle2, Download, Upload, BarChart3, Utensils,
 } from 'lucide-react';
 import {
   DndContext, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
@@ -13,7 +13,6 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Aging, Protection, SortMode, Tasting, Wine, WineStatus, WineType } from './types';
-import { seedWines } from './seed';
 import { displayAging, groupLabel, prepareBottleImageFromUrl, preparePhotoForLens, sortWines, wineMatchesQuery } from './utils';
 
 type Tab = 'home' | 'cellar' | 'tried' | 'add' | 'wishlist' | 'settings';
@@ -47,13 +46,10 @@ const emptyForm = (): EditableWine => ({
 });
 
 const LEGACY_DEMO_NAMES = new Set(['Viña Ardanza','Muga Crianza','Protos 27','Mar de Frades','Les Alcusses','Finca Terrerazo']);
-function migrateLegacyDemos(list: Wine[]) {
-  const demoIds = new Set(seedWines.map(w => w.id));
-  if (!list.some(w => LEGACY_DEMO_NAMES.has(w.name) || demoIds.has(w.id))) return { changed: false, wines: list };
-  const kept = list.filter(w => !LEGACY_DEMO_NAMES.has(w.name) && !demoIds.has(w.id));
-  const baseOrder = Math.max(-1, ...kept.map(w => w.manualOrder));
-  const demos = normalizeCollection(seedWines).map((w,i) => ({ ...w, manualOrder: baseOrder + i + 1 }));
-  return { changed: true, wines: [...kept, ...demos] };
+const DEMO_ID_PREFIX = 'demo-v14-';
+function removeDemoWines(list: Wine[]) {
+  const wines = list.filter(w => !LEGACY_DEMO_NAMES.has(w.name) && !w.id.startsWith(DEMO_ID_PREFIX));
+  return { changed: wines.length !== list.length, wines };
 }
 
 const GRAPE_ALIASES: Record<string,string> = {
@@ -183,9 +179,9 @@ function App() {
   const [wines, setWines] = useState<Wine[]>(() => {
     try {
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-      const local = parsed ? normalizeCollection(parsed) : normalizeCollection(seedWines);
-      return migrateLegacyDemos(local).wines;
-    } catch { return normalizeCollection(seedWines); }
+      const local = parsed ? normalizeCollection(parsed) : [];
+      return removeDemoWines(local).wines;
+    } catch { return []; }
   });
   const [selectedWine, setSelectedWine] = useState<Wine | null>(null);
   const [editingWine, setEditingWine] = useState<Wine | null>(null);
@@ -216,12 +212,13 @@ function App() {
         return;
       }
       const remoteWines = normalizeCollection(data.wines);
-      // Sustituye únicamente los ejemplos antiguos por los nuevos, conservando
-      // cualquier vino real que ya hubiera añadido Pedro.
-      const migrated = migrateLegacyDemos(remoteWines);
-      if (migrated.changed) {
-        setWines(migrated.wines);
-        await fetch('/api/wines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wines: migrated.wines, replace: true }) });
+      // Los vinos de demostración ya no forman parte de la colección real.
+      // Si quedan restos de versiones anteriores, se eliminan una sola vez
+      // también de Neon para que no puedan reaparecer en otro dispositivo.
+      const cleaned = removeDemoWines(remoteWines);
+      if (cleaned.changed) {
+        setWines(cleaned.wines);
+        await fetch('/api/wines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wines: cleaned.wines, replace: true }) });
         setCloudStatus('synced');
         return;
       }
@@ -463,7 +460,7 @@ function App() {
         {tab === 'tried' && <TriedScreen wines={triedWines} onOpen={setSelectedWine} onAdd={() => resetAdd('tried')} />}
         {tab === 'wishlist' && <WishlistScreen wines={wishlist} onOpen={setSelectedWine} onAdd={() => resetAdd('wishlist')} />}
         {tab === 'add' && <AddScreen form={form} setForm={setForm} save={saveForm} editing={!!editingWine} moreInfo={moreInfo} setMoreInfo={setMoreInfo} onCancel={() => { setEditingWine(null); setForm(emptyForm()); setTab('cellar'); }} />}
-        {tab === 'settings' && <SettingsScreen wines={wines} cloudStatus={cloudStatus} onBack={()=>setTab('home')} onImport={importBackup} onReset={() => { if (confirm('¿Restaurar los vinos de ejemplo?')) { const demo = normalizeCollection(seedWines); setWines(demo); void replaceCloud(demo); } }} />}
+        {tab === 'settings' && <SettingsScreen wines={wines} cloudStatus={cloudStatus} onBack={()=>setTab('home')} onImport={importBackup} />}
       </main>
 
       {tab !== 'add' && tab !== 'settings' && <BottomNav tab={tab} setTab={setTab} onAdd={() => resetAdd('cellar')} />}
@@ -796,7 +793,7 @@ function WineModal({wine,allWines,onOpenWine,onClose,onPatch,onEdit,onDelete,onM
 function Info({label,value}:{label:string;value:string}){return <div className="info-row"><span>{label}</span><strong>{value}</strong></div>;}
 function formatDate(value:string){try{return new Intl.DateTimeFormat('es-ES',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(value));}catch{return value;}}
 
-function SettingsScreen({wines,cloudStatus,onBack,onReset,onImport}:{wines:Wine[];cloudStatus:CloudStatus;onBack:()=>void;onReset:()=>void;onImport:(data:unknown)=>void}) {
+function SettingsScreen({wines,cloudStatus,onBack,onImport}:{wines:Wine[];cloudStatus:CloudStatus;onBack:()=>void;onImport:(data:unknown)=>void}) {
   const cloudCopy=cloudStatus==='synced'?'Guardado en la nube':cloudStatus==='saving'?'Guardando…':cloudStatus==='connecting'?'Conectando…':cloudStatus==='local'?'Solo en este dispositivo':'Pendiente de sincronizar';
   const scored=wines.filter(w=>w.score!=null); const avg=scored.length?(scored.reduce((n,w)=>n+(w.score||0),0)/scored.length).toFixed(1):'—';
   const countries=new Set(wines.map(w=>w.country).filter(Boolean)).size;
@@ -808,7 +805,7 @@ function SettingsScreen({wines,cloudStatus,onBack,onReset,onImport}:{wines:Wine[
   return <div className="page settings-page"><Header eyebrow="CELLER ROIG" title="Ajustes" right={<button className="icon-button" onClick={onBack}><X/></button>}/>
     <div className="settings-card"><div className="settings-line"><div><strong>Pedro</strong><span>{wines.length} vinos guardados</span></div><WineIcon/></div><div className="settings-line"><div><strong>Sincronización</strong><span>{cloudCopy} · móvil y PC se actualizan automáticamente</span></div><Archive/></div></div>
     <div className="settings-card stats-settings"><div className="settings-title"><BarChart3 size={18}/><strong>Tus números</strong></div><div className="mini-stats"><div><b>{avg}</b><span>nota media</span></div><div><b>{countries}</b><span>países</span></div><div><b>{topDenomination}</b><span>denominación más repetida</span></div><div><b>{topGrape}</b><span>uva más repetida</span></div></div></div>
-    <div className="settings-card"><button className="settings-line" onClick={exportCsv}><div><strong>Exportar a CSV</strong><span>Para abrir la colección en Excel</span></div><ExternalLink/></button><button className="settings-line" onClick={exportJson}><div><strong>Guardar copia completa</strong><span>Incluye fichas, notas e imágenes guardadas</span></div><Download/></button><label className="settings-line import-line"><div><strong>Restaurar copia completa</strong><span>Importar un archivo JSON de Celler Roig</span></div><Upload/><input type="file" accept="application/json,.json" onChange={e=>void importJson(e.target.files?.[0])}/></label><button className="settings-line" onClick={onReset}><div><strong>Restaurar ejemplo</strong><span>Vuelve a cargar los vinos de muestra</span></div><RotateCcw/></button></div>
+    <div className="settings-card"><button className="settings-line" onClick={exportCsv}><div><strong>Exportar a CSV</strong><span>Para abrir la colección en Excel</span></div><ExternalLink/></button><button className="settings-line" onClick={exportJson}><div><strong>Guardar copia completa</strong><span>Incluye fichas, notas e imágenes guardadas</span></div><Download/></button><label className="settings-line import-line"><div><strong>Restaurar copia completa</strong><span>Importar un archivo JSON de Celler Roig</span></div><Upload/><input type="file" accept="application/json,.json" onChange={e=>void importJson(e.target.files?.[0])}/></label></div>
     <p className="settings-note">Si no hay cobertura, puedes seguir usando Celler Roig. Los cambios se guardan en el móvil y se sincronizan con Neon al recuperar conexión.</p></div>;
 }
 

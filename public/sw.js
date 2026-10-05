@@ -1,4 +1,4 @@
-const CACHE = 'celler-roig-v16';
+const CACHE = 'celler-roig-v16-1';
 const ASSETS = ['/', '/manifest.webmanifest'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));

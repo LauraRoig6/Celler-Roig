@@ -40,3 +40,9 @@ El proyecto usa Vite + React + TypeScript y está preparado para desplegarse en 
 - En Inicio se elimina el botón redundante “Comida”; se mantiene ✨ Sorpréndeme.
 - Vinoteca y Probados usan cabeceras compactas: búsqueda y filtros se abren desde iconos.
 - En Vinoteca, el icono de arrastre aparece solo cuando el orden es **Mi orden**.
+
+
+## V16.1
+- Los vinos de demostración ya no se vuelven a crear al borrarlos.
+- Al actualizar, los ejemplos antiguos se eliminan también de Neon para que no reaparezcan entre dispositivos.
+- Una instalación nueva empieza con la colección vacía.
