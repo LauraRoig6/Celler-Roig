@@ -1,5 +1,5 @@
 export type WineStatus = 'cellar' | 'tried' | 'wishlist';
-export type WineType = 'Tinto' | 'Blanco' | 'Rosado' | 'Espumoso' | 'Generoso' | 'Otro' | 'Sin indicar';
+export type WineType = 'Tinto' | 'Blanco' | 'Rosado' | 'Espumoso' | 'Sin indicar';
 export type Aging = 'Joven' | 'Roble' | 'Crianza' | 'Reserva' | 'Gran Reserva' | 'Otro' | 'Sin indicar';
 export type Protection = 'DOP' | 'IGP' | 'Sin indicación';
 export type Rebuy = 'Sí' | 'Quizá' | 'No' | '';
@@ -28,6 +28,7 @@ export type Wine = {
   alcohol?: number;
   price?: number;
   shop: string;
+  shopContext: WineStatus;
   quantity: number;
   status: WineStatus;
   tried: boolean;
@@ -37,12 +38,10 @@ export type Wine = {
   notes: string;
   rebuy: Rebuy;
   imageUrl: string;
-  location: string;
   gifted: boolean;
   openSoon: boolean;
-  drinkFrom?: number;
-  drinkTo?: number;
-  drinkWindowSource: string;
+  pairing: string;
+  pairingSource: string;
   giftedBy: string;
   giftDate: string;
   tastings: Tasting[];

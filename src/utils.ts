@@ -185,7 +185,7 @@ function editDistance(a: string, b: string) {
 
 export function wineMatchesQuery(wine: Wine, query: string) {
   const q=normalizeSearch(query); if(!q) return true;
-  const hay=normalizeSearch([wine.name,wine.winery,wine.type,displayAging(wine),wine.classification,wine.denomination,wine.region,wine.country,wine.location,...wine.grapes,String(wine.vintage||'')].join(' '));
+  const hay=normalizeSearch([wine.name,wine.winery,wine.type,displayAging(wine),wine.classification,wine.denomination,wine.region,wine.country,wine.pairing,wine.shop,...wine.grapes,String(wine.vintage||'')].join(' '));
   if(hay.includes(q)) return true;
   const hayTokens=hay.split(' ').filter(Boolean), qTokens=q.split(' ').filter(Boolean);
   return qTokens.every(token => hayTokens.some(h => {

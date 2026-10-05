@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless';
 
 function json(res, status, body) {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8').end(JSON.stringify(body));
 }
 

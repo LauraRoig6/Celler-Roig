@@ -128,7 +128,6 @@ function inferType(text) {
   if (/espumoso|sparkling|champagne|\bcava\b/.test(t)) return 'Espumoso';
   if (/rosado|rosé|rose wine/.test(t)) return 'Rosado';
   if (/vino blanco|white wine|\bblanco\b/.test(t)) return 'Blanco';
-  if (/generoso|sherry|jerez|oloroso|amontillado|fino de jerez/.test(t)) return 'Generoso';
   if (/vino tinto|red wine|\btinto\b/.test(t)) return 'Tinto';
   return undefined;
 }
@@ -163,6 +162,24 @@ function inferGrapes(text) {
 function inferAlcohol(text) {
   const matches = [...text.matchAll(/(\d{1,2}(?:[.,]\d)?)\s*%\s*(?:vol\.?|alc\.?|alcohol)?/gi)].map(m => Number(m[1].replace(',','.'))).filter(n => n >= 5 && n <= 25);
   return matches[0];
+}
+function pairingPreset(type, grapes = [], aging = '') {
+  const all = grapes.join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+  if (type === 'Espumoso') return 'Aperitivos, marisco, sushi, arroces y frituras';
+  if (type === 'Rosado') return 'Aperitivos, ensaladas, pasta, arroces y cocina mediterránea';
+  if (type === 'Blanco') {
+    if (/albarino|godello|verdejo|sauvignon|riesling/.test(all)) return 'Marisco, pescado, arroces marineros y quesos suaves';
+    if (/chardonnay|viognier/.test(all) && /roble|crianza|reserva/i.test(aging || '')) return 'Pescado al horno, aves, pasta cremosa y quesos semicurados';
+    return 'Pescado, marisco, aperitivos y platos ligeros';
+  }
+  if (type === 'Tinto') {
+    if (/tempranillo|tinto fino|tinta del pais/.test(all)) return 'Cordero, carnes asadas, embutidos y quesos curados';
+    if (/cabernet|syrah|shiraz|malbec|monastrell|bobal/.test(all)) return 'Carnes rojas, guisos, barbacoa y quesos intensos';
+    if (/pinot noir|gamay/.test(all)) return 'Aves, setas, carnes blancas y quesos suaves';
+    if (/garnacha|grenache/.test(all)) return 'Carnes a la brasa, arroces de carne, embutidos y quesos';
+    return 'Carnes, guisos, embutidos y quesos';
+  }
+  return '';
 }
 function inferVintage(text) {
   const years = [...text.matchAll(/\b(19\d{2}|20\d{2})\b/g)].map(m => Number(m[1])).filter(y => y >= 1900 && y <= new Date().getFullYear()+1);
@@ -226,6 +243,8 @@ export default async function handler(req, res) {
     const alcoholPair = pairValue(pairs, ['graduacion','graduación','alcohol','grado alcoholico','grado alcohólico','% vol']);
     const countryPair = pairValue(pairs, ['pais','país','country']);
     const regionPair = pairValue(pairs, ['region','región','zona','comunidad autonoma','comunidad autónoma']);
+    const classificationPair = pairValue(pairs, ['clasificacion','clasificación','classification','appellation','categoria','categoría']);
+    const pairingPair = pairValue(pairs, ['maridaje','maridajes','food pairing','pairing','gastronomia','gastronomía','acompañamiento','acompanamiento','ideal con']);
     const combined = `${hint} ${product.name || ''} ${pageTitle} ${description} ${denominationPair} ${grapePair} ${agingPair} ${typePair} ${bodyText.slice(0, 180000)}`;
     const app = inferAppellation(`${denominationPair} ${combined}`);
 
@@ -241,6 +260,9 @@ export default async function handler(req, res) {
     const price = getOfferPrice(product);
     const country = countryPair || (app.denomination ? 'España' : (/\bespaña\b|\bspain\b/i.test(combined) || url.hostname.endsWith('.es') ? 'España' : ''));
     const region = app.region || regionPair;
+    const classification = classificationPair || (String(denominationPair).match(/\b(AOC|AOP|DOCG|DOCa|DOQ|DOC|AVA|IGP|DOP|IG|GI)\b/i)?.[1] || '');
+    const pairing = String(pairingPair || '').replace(/\s+/g,' ').trim().slice(0,180) || pairingPreset(type, grapes, aging);
+    const pairingSource = pairingPair ? 'web' : (pairing ? 'sugerencia' : '');
 
     const fieldsFound = [name, brand, vintage, type, aging !== 'Sin indicar' ? aging : '', app.denomination, grapes.length, alcohol, imageUrl, region].filter(Boolean).length;
 
@@ -253,11 +275,14 @@ export default async function handler(req, res) {
         grapes,
         aging,
         protection: app.protection,
+        classification,
         denomination: app.denomination,
         region,
         country,
         alcohol,
         price,
+        pairing,
+        pairingSource,
         imageUrl,
         sourceUrl: response.url || url.toString(),
         sourceTitle: pageTitle,

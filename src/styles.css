@@ -118,3 +118,6 @@ body{overscroll-behavior-y:none}
    perfecto, multiply hace que ese blanco adopte el fondo de Celler Roig y evita el
    rectángulo blanco alrededor de la botella. Los PNG transparentes siguen viéndose bien. */
 .bottle-image img,.catalog-image-choice img,.bottle-choice img{mix-blend-mode:multiply}
+
+/* V13: ficha principal y maridaje */
+.pairing-field textarea{margin-bottom:0}.pairing-source{display:block;margin-top:6px;font-size:10px;line-height:1.35;color:var(--muted);font-weight:700}.pairing-source:first-letter{color:var(--gold)}

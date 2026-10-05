@@ -1,16 +1,17 @@
-# Celler Roig V12
+# Celler Roig V13
 
 Aplicación móvil/PWA para la vinoteca personal de Pedro.
 
-## Cambios principales de V12
+## Cambios principales de V13
 
-- La foto ya no depende de que Google Lens encuentre una coincidencia visual exacta.
-- Se sube la foto a la Image API de SerpApi y Lens intenta extraer el texto de la etiqueta.
-- Si reconoce nombre/gama/añada, ese texto se usa automáticamente para buscar la ficha y las fotos en fuentes especializadas.
-- Las búsquedas escritas priorizan Bodeboca, Vivino, Petit Celler, Vinoselección, Vinatis, Decántalo, Vinissimus, Lavinia, Millesima e iDealwine.
-- Al elegir una foto de una ficha real, Celler Roig intenta importar también los datos de esa página.
-- Las fotos con fondo blanco se integran visualmente en la estantería mediante `mix-blend-mode: multiply`; no se promete un recorte falso cuando el fondo no puede eliminarse de forma fiable.
-- Se ha aumentado la resolución/calidad de la foto enviada a Lens (siempre por debajo del límite de 500 KB).
+- Sincronización móvil ↔ PC reforzada: Neon pasa a ser la fuente común y la app refresca desde la nube al abrir, volver a la pestaña y cada pocos segundos. Los borrados se propagan entre dispositivos.
+- Tipos simplificados a Tinto, Blanco, Rosado y Espumoso; si la búsqueda no está segura, queda como “Sin indicar”.
+- Se elimina “Dónde está guardado” y desaparece el aviso para instalar la PWA.
+- Uvas, envejecimiento, clasificación oficial, denominación/appellation, región y país pasan a la ficha principal.
+- “Más información” queda para precio, contexto de compra/prueba/descubrimiento, graduación, puntuación, recompra y notas.
+- El campo cambia según el destino: “Dónde lo compré” (Vinoteca), “Dónde lo probé” (Probados) y “Dónde lo vi” (Por probar).
+- “Mejor momento para beber” se sustituye por Maridaje. Primero se intenta obtener de las fichas de tiendas especializadas; si no aparece, se propone una sugerencia prudente según tipo, uva y envejecimiento.
+- Se conserva “Abrir pronto” solo como marca manual.
 
 ## Variables de Vercel
 
